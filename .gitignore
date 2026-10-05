@@ -1,0 +1,92 @@
+# ================================
+# Python
+# ================================
+
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ================================
+# Node / Frontend
+# ================================
+
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.tanstack/
+
+# ================================
+# Environment files
+# ================================
+
+.env
+.env.*
+!.env.example
+
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ================================
+# Temporary prediction/test files
+# ================================
+
+prediction_response.json
+test_data.csv
+test_data.xlsx
+sample.csv
+sample.xlsx
+
+# ================================
+# Logs
+# ================================
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ================================
+# macOS
+# ================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ================================
+# Editors / IDEs
+# ================================
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+.idea/
+*.swp
+*.swo
+
+# ================================
+# Build / deployment artifacts
+# ================================
+
+dist/
+build/
+.nitro/
+.output/
+
+# ================================
+# Temporary files
+# ================================
+
+*.tmp
+*.temp
+*.bak
