@@ -298,6 +298,8 @@ The frontend also supports:
 
 The CDM Upload page accepts structured tabular data.
 
+**Current review version:** the backend reads the uploaded tabular file and runs inference on the first data row. This keeps the review workflow focused on a single CDM prediction. Batch prediction across all uploaded rows is planned as future work and does not change the trained CatBoost model.
+
 Supported formats:
 
 ```text
