@@ -1,30 +1,100 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
 import { useNavigate } from "react-router-dom";
+
 import Icon from "./Icon.jsx";
 import { authService } from "../services/store.js";
 
 const BASE_COMMANDS = [
-  { id: "dashboard", label: "Go to Mission Dashboard", category: "Navigation", path: "/dashboard", icon: "grid" },
-  { id: "mission", label: "View Mission Overview", category: "Navigation", path: "/mission", icon: "target" },
-  { id: "predictions", label: "Launch Astra Risk Assistant", category: "AI Assistant", path: "/predictions", icon: "activity" },
-  { id: "alerts", label: "Open Alert Center", category: "Alerts", path: "/alerts", icon: "bell" },
-  { id: "upload", label: "Upload Conjunction Dataset", category: "Data Ingest", path: "/upload", icon: "upload" },
-  { id: "analytics", label: "View System Analytics & Metrics", category: "Analytics", path: "/analytics", icon: "chart" },
-  { id: "timeline", label: "View Conjunction Analysis Timeline", category: "Timeline", path: "/timeline", icon: "clock" },
-  { id: "history", label: "Browse Activity & Audit History", category: "Audit", path: "/history", icon: "database" },
-  { id: "reports", label: "Generate & Download Conjunction Reports", category: "Reports", path: "/reports", icon: "file" },
-  { id: "settings", label: "Configure Operator Preferences & Theme", category: "Settings", path: "/settings", icon: "settings" },
+  {
+    id: "dashboard",
+    label: "Go to Mission Dashboard",
+    category: "Navigation",
+    path: "/dashboard",
+    icon: "grid",
+  },
+
+  {
+    id: "mission",
+    label: "View Mission Overview",
+    category: "Navigation",
+    path: "/mission",
+    icon: "target",
+  },
+
+  {
+    id: "alerts",
+    label: "Open Alert Center",
+    category: "Alerts",
+    path: "/alerts",
+    icon: "bell",
+  },
+
+  {
+    id: "upload",
+    label: "Upload Conjunction Dataset",
+    category: "Data Ingest",
+    path: "/upload",
+    icon: "upload",
+  },
+
+  {
+    id: "timeline",
+    label: "View Conjunction Analysis Timeline",
+    category: "Timeline",
+    path: "/timeline",
+    icon: "clock",
+  },
+
+  {
+    id: "history",
+    label: "Browse Activity & Audit History",
+    category: "Audit",
+    path: "/history",
+    icon: "database",
+  },
+
+  {
+    id: "reports",
+    label: "Generate & Download Conjunction Reports",
+    category: "Reports",
+    path: "/reports",
+    icon: "file",
+  },
+
+  {
+    id: "settings",
+    label: "Configure Operator Preferences & Theme",
+    category: "Settings",
+    path: "/settings",
+    icon: "settings",
+  },
 ];
 
-export default function CommandPalette({ isOpen, onClose }) {
-  const [query, setQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
+export default function CommandPalette({
+  isOpen,
+  onClose,
+}) {
+  const [query, setQuery] =
+    useState("");
+
+  const [selectedIndex, setSelectedIndex] =
+    useState(0);
+
   const navigate = useNavigate();
 
-  const currentUser = authService.getCurrentUser();
-  const isAdmin = currentUser?.role === "admin";
+  const currentUser =
+    authService.getCurrentUser();
 
-  const commands = [...BASE_COMMANDS];
+  const isAdmin =
+    currentUser?.role === "admin";
+
+  const commands = [
+    ...BASE_COMMANDS,
+  ];
 
   if (isAdmin) {
     commands.push({
@@ -36,79 +106,127 @@ export default function CommandPalette({ isOpen, onClose }) {
     });
   }
 
-  const filtered = commands.filter(
-    (c) =>
-      c.label.toLowerCase().includes(query.toLowerCase()) ||
-      c.category.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered =
+    commands.filter(
+      (command) =>
+        command.label
+          .toLowerCase()
+          .includes(
+            query.toLowerCase()
+          ) ||
+        command.category
+          .toLowerCase()
+          .includes(
+            query.toLowerCase()
+          )
+    );
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
+    setSelectedIndex(0);
+  }, [query]);
 
-        if (isOpen) {
-          onClose();
-        } else {
-          onClose(true);
-        }
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!isOpen) {
+        return;
       }
 
-      if (isOpen) {
-        if (e.key === "Escape") {
-          onClose();
-        }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
 
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSelectedIndex(
-            (prev) => (prev + 1) % (filtered.length || 1)
-          );
-        }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
 
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSelectedIndex(
-            (prev) =>
-              (prev - 1 + filtered.length) % (filtered.length || 1)
-          );
-        }
+        setSelectedIndex(
+          (previous) =>
+            (previous + 1) %
+            (filtered.length || 1)
+        );
+      }
 
-        if (e.key === "Enter" && filtered[selectedIndex]) {
-          e.preventDefault();
-          navigate(filtered[selectedIndex].path);
-          onClose();
-        }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+
+        setSelectedIndex(
+          (previous) =>
+            (previous -
+              1 +
+              filtered.length) %
+            (filtered.length || 1)
+        );
+      }
+
+      if (
+        event.key === "Enter" &&
+        filtered[selectedIndex]
+      ) {
+        event.preventDefault();
+
+        navigate(
+          filtered[selectedIndex]
+            .path
+        );
+
+        onClose();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
 
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, filtered, selectedIndex, navigate, onClose]);
+    return () =>
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+  }, [
+    isOpen,
+    filtered,
+    selectedIndex,
+    navigate,
+    onClose,
+  ]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   return (
-    <div className="cmd-overlay" onClick={onClose}>
+    <div
+      className="cmd-overlay"
+      onClick={onClose}
+    >
       <div
         className="cmd-box"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) =>
+          event.stopPropagation()
+        }
       >
         <div className="cmd-input-wrap">
-          <Icon name="search" size={18} />
+          <Icon
+            name="search"
+            size={18}
+          />
 
           <input
             autoFocus
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedIndex(0);
+            onChange={(event) => {
+              setQuery(
+                event.target.value
+              );
             }}
             placeholder="Type a command, route, or dataset identifier..."
           />
 
-          <span className="kbd">ESC</span>
+          <span className="kbd">
+            ESC
+          </span>
         </div>
 
         <div className="cmd-results">
@@ -117,50 +235,74 @@ export default function CommandPalette({ isOpen, onClose }) {
               style={{
                 padding: 20,
                 textAlign: "center",
-                color: "var(--text-muted)",
+                color:
+                  "var(--text-muted)",
               }}
             >
-              No matching Astra commands found.
+              No matching Astra
+              commands found.
             </div>
           ) : (
-            filtered.map((item, idx) => (
-              <div
-                key={item.id}
-                className={`cmd-item ${
-                  idx === selectedIndex ? "selected" : ""
-                }`}
-                onClick={() => {
-                  navigate(item.path);
-                  onClose();
-                }}
-                onMouseEnter={() => setSelectedIndex(idx)}
-              >
-                <Icon name={item.icon} size={16} />
-
-                <div style={{ flex: 1 }}>
-                  <div>{item.label}</div>
+            filtered.map(
+              (item, index) => (
+                <div
+                  key={item.id}
+                  className={`cmd-item ${
+                    index ===
+                    selectedIndex
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    navigate(
+                      item.path
+                    );
+                    onClose();
+                  }}
+                  onMouseEnter={() =>
+                    setSelectedIndex(
+                      index
+                    )
+                  }
+                >
+                  <Icon
+                    name={item.icon}
+                    size={16}
+                  />
 
                   <div
                     style={{
-                      fontSize: 11,
-                      color: "var(--text-muted)",
+                      flex: 1,
                     }}
                   >
-                    {item.category}
-                  </div>
-                </div>
+                    <div>
+                      {item.label}
+                    </div>
 
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 11,
-                    color: "var(--accent)",
-                  }}
-                >
-                  {item.path}
-                </span>
-              </div>
-            ))
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color:
+                          "var(--text-muted)",
+                      }}
+                    >
+                      {item.category}
+                    </div>
+                  </div>
+
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color:
+                        "var(--accent)",
+                    }}
+                  >
+                    {item.path}
+                  </span>
+                </div>
+              )
+            )
           )}
         </div>
       </div>

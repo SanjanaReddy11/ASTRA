@@ -74,6 +74,7 @@ const ALERTS = [
     t: "Future-risk prediction completed",
     event: "CONJ-8618",
     asset: "SATELLITE-G",
+    type: "Satellite",
     ts: "1h ago",
     status: "Resolved",
     pinned: false,
@@ -94,17 +95,14 @@ const ALERTS = [
 export default function Alerts() {
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState(ALERTS[0]);
 
-  const [alertStatus, setAlertStatus] = useState({});
-  const [mutedAlerts, setMutedAlerts] = useState([]);
-
-  const getStatus = (alert) =>
-    alertStatus[alert.id] || alert.status;
+  const [mutedAlerts, setMutedAlerts] =
+    useState([]);
 
   const shown = ALERTS.filter((alert) => {
     const matchesFilter =
-      filter === "all" || alert.p === filter;
+      filter === "all" ||
+      alert.p === filter;
 
     const searchText = `
       ${alert.t}
@@ -115,11 +113,13 @@ export default function Alerts() {
       ${alert.status}
     `.toLowerCase();
 
-    const matchesSearch = searchText.includes(
-      q.toLowerCase()
-    );
+    const matchesSearch =
+      searchText.includes(
+        q.toLowerCase()
+      );
 
-    const isMuted = mutedAlerts.includes(alert.id);
+    const isMuted =
+      mutedAlerts.includes(alert.id);
 
     return (
       matchesFilter &&
@@ -134,38 +134,6 @@ export default function Alerts() {
       !mutedAlerts.includes(alert.id)
   );
 
-  const handleAcknowledge = () => {
-    setAlertStatus((prev) => ({
-      ...prev,
-      [selected.id]: "Acknowledged",
-    }));
-  };
-
-  const handleEscalate = () => {
-    setAlertStatus((prev) => ({
-      ...prev,
-      [selected.id]: "Escalated",
-    }));
-  };
-
-  const handleMute = () => {
-    const nextMuted = [
-      ...mutedAlerts,
-      selected.id,
-    ];
-
-    setMutedAlerts(nextMuted);
-
-    const nextAlert =
-      ALERTS.find(
-        (alert) =>
-          alert.id !== selected.id &&
-          !nextMuted.includes(alert.id)
-      ) || ALERTS[0];
-
-    setSelected(nextAlert);
-  };
-
   return (
     <div>
       {/* -------------------- PAGE HEADER -------------------- */}
@@ -174,8 +142,9 @@ export default function Alerts() {
           <h1>Conjunction Alerts</h1>
 
           <p>
-            Future-risk and CDM screening alerts across
-            Low, Medium and High risk levels.
+            Future-risk and CDM screening
+            alerts across Low, Medium and
+            High risk levels.
           </p>
         </div>
 
@@ -187,7 +156,10 @@ export default function Alerts() {
               margin: 0,
             }}
           >
-            <Icon name="search" size={14} />
+            <Icon
+              name="search"
+              size={14}
+            />
 
             <input
               value={q}
@@ -217,7 +189,9 @@ export default function Alerts() {
         ].map((f) => (
           <button
             key={f}
-            onClick={() => setFilter(f)}
+            onClick={() =>
+              setFilter(f)
+            }
             className="btn"
             style={{
               padding: "6px 16px",
@@ -234,8 +208,10 @@ export default function Alerts() {
                 filter === f
                   ? "#fff"
                   : "var(--text-secondary)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
+              textTransform:
+                "uppercase",
+              letterSpacing:
+                "0.06em",
             }}
           >
             {f}
@@ -247,7 +223,8 @@ export default function Alerts() {
       <div
         className="grid"
         style={{
-          gridTemplateColumns: "1.4fr 1fr",
+          gridTemplateColumns:
+            "1.4fr 1fr",
         }}
       >
         {/* -------------------- ALERT FEED -------------------- */}
@@ -258,7 +235,8 @@ export default function Alerts() {
                 name="bell"
                 size={16}
                 style={{
-                  color: "var(--accent)",
+                  color:
+                    "var(--accent)",
                 }}
               />{" "}
               Live Conjunction Alert Feed ·{" "}
@@ -274,30 +252,25 @@ export default function Alerts() {
             <div
               style={{
                 padding: "30px",
-                textAlign: "center",
-                color: "var(--text-muted)",
+                textAlign:
+                  "center",
+                color:
+                  "var(--text-muted)",
                 fontSize: "13px",
               }}
             >
-              No conjunction alerts match the
-              selected filter.
+              No conjunction alerts
+              match the selected
+              filter.
             </div>
           ) : (
             shown.map((alert) => (
               <div
                 key={alert.id}
                 className={`alert-item ${alert.p}`}
-                onClick={() =>
-                  setSelected(alert)
-                }
                 style={{
-                  cursor: "pointer",
-                  background:
-                    selected.id === alert.id
-                      ? "rgba(78,168,255,0.12)"
-                      : undefined,
                   opacity:
-                    getStatus(alert) ===
+                    alert.status ===
                     "Resolved"
                       ? 0.65
                       : 1,
@@ -311,7 +284,8 @@ export default function Alerts() {
                   </div>
 
                   <div className="a-sub">
-                    {alert.id} · {alert.event} ·{" "}
+                    {alert.id} ·{" "}
+                    {alert.event} ·{" "}
                     {alert.asset}
                   </div>
                 </div>
@@ -322,26 +296,30 @@ export default function Alerts() {
                     display: "flex",
                     flexDirection:
                       "column",
-                    alignItems: "flex-end",
+                    alignItems:
+                      "flex-end",
                     gap: 4,
                   }}
                 >
-                  <span>{alert.ts}</span>
+                  <span>
+                    {alert.ts}
+                  </span>
 
                   <span
                     style={{
-                      fontSize: "9px",
+                      fontSize:
+                        "9px",
                       color:
-                        getStatus(alert) ===
+                        alert.status ===
                         "Acknowledged"
                           ? "var(--success)"
-                          : getStatus(alert) ===
+                          : alert.status ===
                             "Escalated"
-                            ? "var(--danger)"
-                            : "var(--text-muted)",
+                          ? "var(--danger)"
+                          : "var(--text-muted)",
                     }}
                   >
-                    {getStatus(alert)}
+                    {alert.status}
                   </span>
                 </div>
               </div>
@@ -353,11 +331,12 @@ export default function Alerts() {
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
+            flexDirection:
+              "column",
             gap: 20,
           }}
         >
-          {/* PINNED ALERTS */}
+          {/* PRIORITY CONJUNCTIONS */}
           <div className="card hud-card">
             <div className="card-head">
               <h3>
@@ -381,11 +360,9 @@ export default function Alerts() {
               <div
                 key={alert.id}
                 className={`alert-item ${alert.p}`}
-                onClick={() =>
-                  setSelected(alert)
-                }
                 style={{
-                  cursor: "pointer",
+                  cursor:
+                    "default",
                 }}
               >
                 <span className="stripe" />
@@ -396,7 +373,8 @@ export default function Alerts() {
                   </div>
 
                   <div className="a-sub">
-                    {alert.id} · {alert.event}
+                    {alert.id} ·{" "}
+                    {alert.event}
                   </div>
                 </div>
 
@@ -405,199 +383,6 @@ export default function Alerts() {
                 </div>
               </div>
             ))}
-          </div>
-
-          {/* ALERT INSPECTOR */}
-          <div className="card hud-card">
-            <div className="card-head">
-              <h3>Alert Inspector</h3>
-
-              <span
-                className={`chip ${selected.p}`}
-              >
-                {selected.p}
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-                fontSize: 13,
-              }}
-            >
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  Alert Identifier
-                </small>
-
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 14,
-                    color:
-                      "var(--accent)",
-                  }}
-                >
-                  {selected.id}
-                </div>
-              </div>
-
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  Conjunction Event
-                </small>
-
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 13,
-                  }}
-                >
-                  {selected.event}
-                </div>
-              </div>
-
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  Alert Description
-                </small>
-
-                <div
-                  style={{
-                    fontWeight: 600,
-                  }}
-                >
-                  {selected.t}
-                </div>
-              </div>
-
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  Object Type
-                </small>
-
-                <div>
-                  {selected.type}
-                </div>
-              </div>
-
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  Target
-                </small>
-
-                <div>
-                  {selected.asset}
-                </div>
-              </div>
-
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  TCA / Alert Time
-                </small>
-
-                <div className="mono">
-                  {selected.ts}
-                </div>
-              </div>
-
-              <div>
-                <small
-                  style={{
-                    color:
-                      "var(--text-muted)",
-                    display: "block",
-                  }}
-                >
-                  Status
-                </small>
-
-                <div
-                  style={{
-                    color:
-                      getStatus(selected) ===
-                      "Escalated"
-                        ? "var(--danger)"
-                        : getStatus(selected) ===
-                          "Acknowledged"
-                          ? "var(--success)"
-                          : "var(--text)",
-                    fontWeight: 600,
-                  }}
-                >
-                  {getStatus(selected)}
-                </div>
-              </div>
-            </div>
-
-            {/* ACTIONS */}
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                marginTop: 20,
-              }}
-            >
-              <button
-                className="btn primary"
-                style={{ flex: 1 }}
-                onClick={handleAcknowledge}
-              >
-                Acknowledge
-              </button>
-
-              <button
-                className="btn"
-                onClick={handleEscalate}
-              >
-                Escalate
-              </button>
-
-              <button
-                className="btn ghost"
-                onClick={handleMute}
-              >
-                Mute
-              </button>
-            </div>
           </div>
         </div>
       </div>

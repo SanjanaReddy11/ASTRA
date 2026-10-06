@@ -111,6 +111,17 @@ export default function Upload() {
     setIsUploading(true);
     setLastUploaded(null);
     setVerifyMsg("");
+    setActiveStage(0);
+
+    /*
+     * Clear the previous uploaded-CDM prediction.
+     *
+     * This prevents Reports.jsx from displaying an
+     * older prediction if the new upload fails.
+     */
+    localStorage.removeItem(
+      "astra_latest_cdm_prediction"
+    );
 
     try {
       /* -----------------------------------------
@@ -226,6 +237,42 @@ export default function Upload() {
             "Included In Report"
           );
 
+          /*
+           * Save the REAL backend prediction.
+           *
+           * Reports.jsx reads this value to generate
+           * the uploaded-CDM prediction section.
+           */
+          localStorage.setItem(
+            "astra_latest_cdm_prediction",
+            JSON.stringify({
+              fileName: file.name,
+              uploadedAt:
+                new Date().toISOString(),
+
+              classification:
+                prediction,
+
+              riskScore:
+                result.risk_score,
+
+              log10Probability:
+                result.log10_probability_of_collision,
+
+              probability:
+                result.probability_of_collision,
+
+              isAlert:
+                result.is_alert,
+
+              warning:
+                result.warning || null,
+
+              recordCount:
+                "1 Row (first row analyzed)",
+            })
+          );
+
           intelAnalysis = {
             ...newEvidence,
 
@@ -273,6 +320,14 @@ export default function Upload() {
             isError: false,
           };
         } catch (err) {
+          /*
+           * Make absolutely sure a failed prediction
+           * cannot leave stale prediction data behind.
+           */
+          localStorage.removeItem(
+            "astra_latest_cdm_prediction"
+          );
+
           intelAnalysis = {
             ...newEvidence,
 
@@ -312,6 +367,13 @@ export default function Upload() {
           setActiveStage(3);
         }
       } else {
+        /*
+         * Unsupported file type.
+         */
+        localStorage.removeItem(
+          "astra_latest_cdm_prediction"
+        );
+
         intelAnalysis = {
           ...newEvidence,
 
@@ -368,6 +430,14 @@ export default function Upload() {
       console.error(
         "CDM processing failed:",
         err
+      );
+
+      /*
+       * Do not allow a previous prediction to
+       * remain available after a processing failure.
+       */
+      localStorage.removeItem(
+        "astra_latest_cdm_prediction"
       );
 
       setIsUploading(false);

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+
 import Icon from "./Icon.jsx";
 import { authService } from "../services/store.js";
 
@@ -8,8 +12,6 @@ const CRUMBS = {
   "/dashboard": "Mission Control Dashboard",
   "/mission": "Mission Overview",
   "/upload": "Data Intake Center",
-  "/predictions": "Future Risk Predictions",
-  "/analytics": "Conjunction Analytics",
   "/timeline": "CDM Processing Timeline",
   "/alerts": "Conjunction Alerts",
   "/reports": "Conjunction Reports",
@@ -20,7 +22,8 @@ const CRUMBS = {
 };
 
 function useLocalTime() {
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] =
+    useState(new Date());
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -38,18 +41,25 @@ function pad(value) {
 }
 
 function formatLocalTime(date) {
-  return `${pad(date.getHours())}:${pad(
+  return `${pad(
+    date.getHours()
+  )}:${pad(
     date.getMinutes()
-  )}:${pad(date.getSeconds())}`;
+  )}:${pad(
+    date.getSeconds()
+  )}`;
 }
 
 function formatLocalDate(date) {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    undefined,
+    {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }
+  ).format(date);
 }
 
 export default function Header({
@@ -58,24 +68,33 @@ export default function Header({
   missionMode,
   onToggleMissionMode,
 }) {
-  const loc = useLocation();
+  const location = useLocation();
   const navigate = useNavigate();
 
   const now = useLocalTime();
 
-  const localTime = formatLocalTime(now);
-  const localDate = formatLocalDate(now);
+  const localTime =
+    formatLocalTime(now);
 
-  const crumb = CRUMBS[loc.pathname] || "ASTRA";
+  const localDate =
+    formatLocalDate(now);
 
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const crumb =
+    CRUMBS[location.pathname] ||
+    "ASTRA";
 
-  const currentUser = authService.getCurrentUser() || {
-    username: "user",
-    name: "Astra User",
-    role: "user",
-  };
+  const [notifOpen, setNotifOpen] =
+    useState(false);
+
+  const [profileOpen, setProfileOpen] =
+    useState(false);
+
+  const currentUser =
+    authService.getCurrentUser() || {
+      username: "user",
+      name: "Astra User",
+      role: "user",
+    };
 
   const userInitials =
     currentUser.username === "admin"
@@ -92,31 +111,44 @@ export default function Header({
   };
 
   return (
-    <header className="header" role="banner">
-      {/* -------------------- MOBILE MENU -------------------- */}
+    <header
+      className="header"
+      role="banner"
+    >
+      {/* MOBILE MENU */}
       <button
         className="icon-btn"
         aria-label="Open menu"
         onClick={onMobileMenu}
         style={{ display: "none" }}
       >
-        <Icon name="menu" />
+        <Icon
+          name="menu"
+          size={18}
+        />
       </button>
 
-      {/* -------------------- BREADCRUMB -------------------- */}
+      {/* BREADCRUMB */}
       <div className="breadcrumb">
         <b>ASTRA</b>
-        <span className="sep">/</span>
+
+        <span className="sep">
+          /
+        </span>
+
         <span>{crumb}</span>
       </div>
 
-      {/* -------------------- SEARCH -------------------- */}
+      {/* SEARCH */}
       <div
         className="header-search"
         role="search"
         onClick={onOpenCmd}
       >
-        <Icon name="search" size={16} />
+        <Icon
+          name="search"
+          size={16}
+        />
 
         <input
           placeholder="Search datasets, hashes, reports…"
@@ -124,210 +156,157 @@ export default function Header({
           readOnly
         />
 
-        <span className="kbd">⌘K</span>
+        <span className="kbd">
+          ⌘K
+        </span>
       </div>
 
-      {/* -------------------- HEADER RIGHT -------------------- */}
+      {/* RIGHT SIDE */}
       <div className="header-right">
-        {/* Mission Mode */}
+        {/* MISSION MODE */}
         <button
           className={`btn ghost ${
-            missionMode ? "primary" : ""
+            missionMode
+              ? "primary"
+              : ""
           }`}
-          onClick={onToggleMissionMode}
-          title="Toggle Fullscreen Mission Mode"
+          onClick={
+            onToggleMissionMode
+          }
+          title="Toggle Mission Mode"
           style={{
             fontSize: "11px",
             padding: "4px 10px",
           }}
         >
-          <Icon name="target" size={14} />
+          <Icon
+            name="target"
+            size={14}
+          />
 
           {missionMode
             ? "Exit Mission Control"
             : "Mission Mode"}
         </button>
 
-        {/* Dataset Integrity */}
-        <span
-          className="status-chip"
-          title="CDM dataset integrity monitoring"
-        >
-          <span className="pulse-dot" />
-          Data Integrity
-        </span>
-
-        {/* SHA-256 */}
-        <span
-          className="status-chip"
-          title="SHA-256 dataset integrity verification"
-        >
-          <span className="pulse-dot" />
-          SHA-256 Verified
-        </span>
-
-        {/* -------------------- LOCAL CLOCK -------------------- */}
-        <div
-          className="clock"
-          aria-live="polite"
-          title="Local system time"
-        >
-          <b>{localTime}</b>
-          <span>{localDate}</span>
+        {/* DATA STATUS */}
+        <div className="status-pill">
+          <span className="status-dot" />
+          <span>Data Integrity</span>
         </div>
 
-        {/* -------------------- NOTIFICATIONS -------------------- */}
-        <div style={{ position: "relative" }}>
+        {/* HASH STATUS */}
+        <div className="status-pill">
+          <span className="status-dot" />
+          <span>SHA-256 Verified</span>
+        </div>
+
+        {/* CLOCK */}
+        <div
+          className="header-clock"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            minWidth: "80px",
+          }}
+        >
+          <b className="mono">
+            {localTime}
+          </b>
+
+          <small>
+            {localDate}
+          </small>
+        </div>
+
+        {/* NOTIFICATIONS */}
+        <div
+          style={{
+            position: "relative",
+          }}
+        >
           <button
             className="icon-btn"
             aria-label="Notifications"
             onClick={() => {
-              setNotifOpen((value) => !value);
+              setNotifOpen(
+                (value) => !value
+              );
               setProfileOpen(false);
             }}
           >
-            <Icon name="bell" size={17} />
+            <Icon
+              name="bell"
+              size={17}
+            />
           </button>
 
           {notifOpen && (
-            <div className="notification-menu">
-              <div
+            <div
+              className="notification-menu"
+              style={{
+                right: 0,
+                width: "260px",
+                padding: "14px",
+              }}
+            >
+              <b>
+                System Status
+              </b>
+
+              <p
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: "12px",
-                  borderBottom: "1px solid var(--border)",
-                  paddingBottom: "8px",
+                  fontSize: "11px",
+                  color:
+                    "var(--text-muted)",
+                  marginTop: "8px",
                 }}
               >
-                <b
-                  style={{
-                    fontSize: "13px",
-                  }}
-                >
-                  Screening Updates
-                </b>
-
-                <span
-                  className="chip"
-                  style={{
-                    fontSize: "10px",
-                  }}
-                >
-                  UPDATES
-                </span>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "10px",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "12px",
-                    borderBottom: "1px solid var(--border)",
-                    paddingBottom: "8px",
-                  }}
-                >
-                  <b
-                    style={{
-                      color: "var(--accent)",
-                    }}
-                  >
-                    CDM SCREENING
-                  </b>
-
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      marginTop: "3px",
-                    }}
-                  >
-                    Conjunction dataset processing is
-                    available from the Data Intake page.
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "12px",
-                    borderBottom: "1px solid var(--border)",
-                    paddingBottom: "8px",
-                  }}
-                >
-                  <b
-                    style={{
-                      color: "var(--success)",
-                    }}
-                  >
-                    MODEL READY
-                  </b>
-
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      marginTop: "3px",
-                    }}
-                  >
-                    CatBoost future-risk prediction
-                    pipeline is available.
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "12px",
-                  }}
-                >
-                  <b
-                    style={{
-                      color: "var(--warning)",
-                    }}
-                  >
-                    REPORTING
-                  </b>
-
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      marginTop: "3px",
-                    }}
-                  >
-                    Conjunction reports can be generated
-                    from processed screening results.
-                  </p>
-                </div>
-              </div>
+                ASTRA services are
+                operational.
+              </p>
             </div>
           )}
         </div>
 
-        {/* -------------------- SETTINGS -------------------- */}
+        {/* SETTINGS */}
         <button
           className="icon-btn"
           aria-label="Settings"
-          onClick={() => navigate("/settings")}
+          onClick={() =>
+            navigate("/settings")
+          }
         >
-          <Icon name="settings" size={17} />
+          <Icon
+            name="settings"
+            size={17}
+          />
         </button>
 
-        {/* -------------------- PROFILE -------------------- */}
-        <div style={{ position: "relative" }}>
+        {/* PROFILE */}
+        <div
+          style={{
+            position: "relative",
+          }}
+        >
           <div
             className="avatar"
             aria-label="User profile"
-            title={`${currentUser.name} (${currentUser.role})`}
+            title={
+              currentUser.role
+            }
             onClick={() => {
-              setProfileOpen((value) => !value);
+              setProfileOpen(
+                (value) => !value
+              );
               setNotifOpen(false);
             }}
             style={{
               cursor: "pointer",
               background:
-                currentUser.role === "admin"
+                currentUser.role ===
+                "admin"
                   ? "var(--accent)"
                   : "rgba(78, 168, 255, 0.2)",
             }}
@@ -348,14 +327,16 @@ export default function Header({
                 style={{
                   paddingBottom: "10px",
                   marginBottom: "10px",
-                  borderBottom: "1px solid var(--border)",
+                  borderBottom:
+                    "1px solid var(--border)",
                 }}
               >
                 <b
                   style={{
                     fontSize: "13px",
                     display: "block",
-                    color: "var(--text)",
+                    color:
+                      "var(--text)",
                   }}
                 >
                   {currentUser.name}
@@ -366,17 +347,20 @@ export default function Header({
                   style={{
                     fontSize: "10px",
                     marginTop: "4px",
-                    textTransform: "uppercase",
+                    textTransform:
+                      "uppercase",
                   }}
                 >
-                  Role: {currentUser.role}
+                  Role:{" "}
+                  {currentUser.role}
                 </span>
               </div>
 
               <div
                 style={{
                   display: "flex",
-                  flexDirection: "column",
+                  flexDirection:
+                    "column",
                   gap: "6px",
                 }}
               >
@@ -384,15 +368,24 @@ export default function Header({
                   className="btn ghost"
                   style={{
                     width: "100%",
-                    justifyContent: "flex-start",
+                    justifyContent:
+                      "flex-start",
                     fontSize: "12px",
                   }}
                   onClick={() => {
-                    setProfileOpen(false);
-                    navigate("/settings");
+                    setProfileOpen(
+                      false
+                    );
+                    navigate(
+                      "/settings"
+                    );
                   }}
                 >
-                  <Icon name="settings" size={14} />
+                  <Icon
+                    name="settings"
+                    size={14}
+                  />
+
                   Settings
                 </button>
 
@@ -400,13 +393,18 @@ export default function Header({
                   className="btn primary"
                   style={{
                     width: "100%",
-                    justifyContent: "center",
+                    justifyContent:
+                      "center",
                     fontSize: "12px",
                     marginTop: "6px",
-                    background: "var(--danger)",
-                    borderColor: "var(--danger)",
+                    background:
+                      "var(--danger)",
+                    borderColor:
+                      "var(--danger)",
                   }}
-                  onClick={handleLogout}
+                  onClick={
+                    handleLogout
+                  }
                 >
                   Logout
                 </button>

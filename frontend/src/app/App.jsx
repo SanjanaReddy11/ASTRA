@@ -10,8 +10,6 @@ import Home from "./pages/Home.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import MissionOverview from "./pages/MissionOverview.jsx";
 import Upload from "./pages/Upload.jsx";
-import Predictions from "./pages/Predictions.jsx";
-import Analytics from "./pages/Analytics.jsx";
 import Timeline from "./pages/Timeline.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import Reports from "./pages/Reports.jsx";
@@ -20,9 +18,9 @@ import Settings from "./pages/Settings.jsx";
 import AdminMonitoring from "./pages/AdminMonitoring.jsx";
 import Help from "./pages/Help.jsx";
 
-/* -------------------------------------------------------
+/* =========================================================
    GLOBAL THEME INITIALIZATION
-------------------------------------------------------- */
+========================================================= */
 
 function initializeApplicationTheme() {
   const savedTheme = themeService.getTheme() || "dark";
@@ -38,23 +36,20 @@ function initializeApplicationTheme() {
     selectedTheme;
 }
 
-/* -------------------------------------------------------
+/* =========================================================
    APPLICATION ROUTES
-------------------------------------------------------- */
+========================================================= */
 
 function ApplicationRoutes() {
   return (
     <Routes>
-      {/* -------------------------------------------------
-          PUBLIC ROUTES
-      ------------------------------------------------- */}
+      {/* PUBLIC */}
+      <Route
+        path="/login"
+        element={<Login />}
+      />
 
-      <Route path="/login" element={<Login />} />
-
-      {/* -------------------------------------------------
-          PROTECTED APPLICATION
-      ------------------------------------------------- */}
-
+      {/* PROTECTED APPLICATION */}
       <Route
         element={
           <ProtectedRoute>
@@ -62,46 +57,52 @@ function ApplicationRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Home />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route
+          path="/"
+          element={<Home />}
+        />
+
+        <Route
+          path="/dashboard"
+          element={<Dashboard />}
+        />
+
         <Route
           path="/mission"
           element={<MissionOverview />}
         />
-        <Route path="/upload" element={<Upload />} />
+
         <Route
-          path="/predictions"
-          element={<Predictions />}
+          path="/upload"
+          element={<Upload />}
         />
-        <Route
-          path="/analytics"
-          element={<Analytics />}
-        />
+
         <Route
           path="/timeline"
           element={<Timeline />}
         />
+
         <Route
           path="/alerts"
           element={<Alerts />}
         />
+
         <Route
           path="/reports"
           element={<Reports />}
         />
+
         <Route
           path="/history"
           element={<History />}
         />
+
         <Route
           path="/settings"
           element={<Settings />}
         />
 
-        {/* -------------------------------------------------
-            ADMIN ROUTE
-        ------------------------------------------------- */}
-
+        {/* ADMIN */}
         <Route
           path="/admin"
           element={
@@ -111,16 +112,13 @@ function ApplicationRoutes() {
           }
         />
 
-        {/* -------------------------------------------------
-            HELP
-        ------------------------------------------------- */}
+        {/* HELP */}
+        <Route
+          path="/help"
+          element={<Help />}
+        />
 
-        <Route path="/help" element={<Help />} />
-
-        {/* -------------------------------------------------
-            LEGACY / FALLBACK ROUTES
-        ------------------------------------------------- */}
-
+        {/* LEGACY */}
         <Route
           path="/team"
           element={
@@ -131,6 +129,7 @@ function ApplicationRoutes() {
           }
         />
 
+        {/* FALLBACK */}
         <Route
           path="*"
           element={
@@ -145,14 +144,16 @@ function ApplicationRoutes() {
   );
 }
 
-/* -------------------------------------------------------
+/* =========================================================
    APPLICATION
-------------------------------------------------------- */
+========================================================= */
 
 export default function App() {
   const [isClient, setIsClient] = useState(false);
-  const [BrowserRouterComponent, setBrowserRouterComponent] =
-    useState(null);
+  const [
+    BrowserRouterComponent,
+    setBrowserRouterComponent,
+  ] = useState(null);
 
   useEffect(() => {
     initializeApplicationTheme();
@@ -161,7 +162,9 @@ export default function App() {
 
     import("react-router-dom").then((router) => {
       if (mounted) {
-        setBrowserRouterComponent(() => router.BrowserRouter);
+        setBrowserRouterComponent(
+          () => router.BrowserRouter
+        );
         setIsClient(true);
       }
     });
