@@ -39,6 +39,14 @@ OPTIONAL_FEATURES = {
 }
 
 
+# Identifier columns that are not used by the trained model.
+# Only verified identifier columns should be added here.
+
+IDENTIFIER_COLUMNS = {
+    "mission_id",
+}
+
+
 # Global model variables
 
 loaded_model = None
@@ -122,13 +130,19 @@ def load_model():
             "are missing from selected_features.json."
         )
 
+    # Verify the loaded model and feature schema agree.
+    if model.feature_names_:
+        if list(model.feature_names_) != features:
+            raise ValueError(
+                "Loaded CatBoost model feature names do not "
+                "match selected_features.json or their order."
+            )
+
     loaded_model = model
     selected_features = features
     cat_features = set(categorical_features)
 
-    print(
-        "--> ASTRA model loaded successfully!"
-    )
+    print("--> ASTRA model loaded successfully!")
 
     print(
         f"--> Expected features: {len(selected_features)}"
@@ -141,6 +155,8 @@ def load_model():
     print(
         f"--> Optional features: {sorted(OPTIONAL_FEATURES)}"
     )
+
+    print("--> Native CatBoost SHAP calculation enabled.")
 
 
 # ============================================================
@@ -164,6 +180,16 @@ def prepare_input(data: Dict[str, Any]):
         raise ValueError(
             "Input data must be a dictionary of CDM features."
         )
+
+    # --------------------------------------------------------
+    # Remove verified identifier columns
+    # --------------------------------------------------------
+
+    data = {
+        key: value
+        for key, value in data.items()
+        if key not in IDENTIFIER_COLUMNS
+    }
 
     # --------------------------------------------------------
     # Check supplied feature names
@@ -269,6 +295,192 @@ def prepare_input(data: Dict[str, Any]):
 
 
 # ============================================================
+# GENERATE NATIVE CATBOOST SHAP EXPLANATION
+# ============================================================
+
+def generate_shap_explanation(
+    df: pd.DataFrame,
+    prediction: float,
+):
+
+    if loaded_model is None:
+        raise RuntimeError(
+            "CatBoost model is not loaded."
+        )
+
+    from catboost import Pool
+
+    # --------------------------------------------------------
+    # Create CatBoost Pool in exact model feature order
+    # --------------------------------------------------------
+
+    pool = Pool(
+        data=df,
+        cat_features=[
+            feature
+            for feature in selected_features
+            if feature in cat_features
+        ],
+    )
+
+    # --------------------------------------------------------
+    # Calculate actual SHAP values
+    #
+    # Output shape:
+    # (number of rows, number of features + 1)
+    #
+    # Last column = expected/base value
+    # Other columns = individual feature contributions
+    # --------------------------------------------------------
+
+    shap_matrix = loaded_model.get_feature_importance(
+        data=pool,
+        type="ShapValues",
+    )
+
+    shap_matrix = np.asarray(shap_matrix)
+
+    expected_shape = (
+        1,
+        len(selected_features) + 1,
+    )
+
+    if shap_matrix.shape != expected_shape:
+        raise RuntimeError(
+            "Unexpected CatBoost SHAP output shape. "
+            f"Expected {expected_shape}, "
+            f"received {shap_matrix.shape}."
+        )
+
+    if not np.all(np.isfinite(shap_matrix)):
+        raise RuntimeError(
+            "CatBoost generated invalid SHAP values."
+        )
+
+    # --------------------------------------------------------
+    # Separate feature contributions and base value
+    # --------------------------------------------------------
+
+    shap_values = shap_matrix[0, :-1]
+
+    base_value = float(
+        shap_matrix[0, -1]
+    )
+
+    # --------------------------------------------------------
+    # Build contribution objects for frontend
+    # --------------------------------------------------------
+
+    contributions = [
+        {
+            "feature": feature,
+            "shap_value": float(shap_value),
+        }
+        for feature, shap_value in zip(
+            selected_features,
+            shap_values,
+        )
+    ]
+
+    # Sort by absolute contribution magnitude.
+    # This does not alter the underlying SHAP values.
+
+    contributions.sort(
+        key=lambda item: abs(item["shap_value"]),
+        reverse=True,
+    )
+
+    # --------------------------------------------------------
+    # Verify SHAP additivity
+    #
+    # Prediction = Base value + Sum of SHAP values
+    # --------------------------------------------------------
+
+    sum_of_shap_values = float(
+        np.sum(shap_values)
+    )
+
+    reconstructed_prediction = float(
+        base_value + sum_of_shap_values
+    )
+
+    absolute_difference = float(
+        abs(prediction - reconstructed_prediction)
+    )
+
+    additivity_tolerance = max(
+        1e-6,
+        abs(prediction) * 1e-6,
+    )
+
+    additivity_verified = bool(
+        absolute_difference <= additivity_tolerance
+    )
+
+    # --------------------------------------------------------
+    # Interpretation
+    # --------------------------------------------------------
+
+    interpretation = (
+        "SHAP values explain the CatBoost model's "
+        "predicted log10(Pc). Positive SHAP values "
+        "increase the predicted log10(Pc), while "
+        "negative SHAP values decrease it. "
+        "Feature contributions are calculated using "
+        "CatBoost's native ShapValues implementation."
+    )
+
+    # --------------------------------------------------------
+    # Return frontend-compatible explanation
+    # --------------------------------------------------------
+
+    explanation = {
+
+        "contributions": contributions,
+
+        "base_value": base_value,
+
+        "final_prediction": float(prediction),
+
+        "model_prediction": float(prediction),
+
+        "reconstructed_prediction": reconstructed_prediction,
+
+        "sum_of_shap_values": sum_of_shap_values,
+
+        "absolute_difference": absolute_difference,
+
+        "additivity_tolerance": float(
+            additivity_tolerance
+        ),
+
+        "additivity_verified": additivity_verified,
+
+        "interpretation": interpretation,
+
+    }
+
+    print(
+        "--> SHAP explanation generated successfully."
+    )
+
+    print(
+        f"--> SHAP features: {len(contributions)}"
+    )
+
+    print(
+        f"--> SHAP additivity verified: {additivity_verified}"
+    )
+
+    print(
+        f"--> SHAP reconstruction difference: "
+        f"{absolute_difference:.12g}"
+    )
+
+    return explanation
+
+
+# ============================================================
 # CATBOOST PREDICTION
 # ============================================================
 
@@ -292,13 +504,24 @@ def predict_data(data: Dict[str, Any]):
     log10_pc = prediction
 
     # --------------------------------------------------------
+    # Generate SHAP explanation
+    # --------------------------------------------------------
+
+    explanation = generate_shap_explanation(
+        df=df,
+        prediction=prediction,
+    )
+
+    # --------------------------------------------------------
     # Convert log10(Pc) into collision probability
     # --------------------------------------------------------
 
     try:
+
         probability_of_collision = 10 ** log10_pc
 
     except OverflowError:
+
         raise RuntimeError(
             "Predicted collision probability is outside "
             "the supported numerical range."
@@ -346,6 +569,7 @@ def predict_data(data: Dict[str, Any]):
     # --------------------------------------------------------
 
     result = {
+
         "prediction": risk_level,
 
         "log10_probability_of_collision": round(
@@ -362,6 +586,9 @@ def predict_data(data: Dict[str, Any]):
         "status": "success",
 
         "is_alert": risk_level == "High",
+
+        "explanation": explanation,
+
     }
 
     # --------------------------------------------------------
@@ -467,6 +694,27 @@ def predict_from_file(
 
         raise ValueError(
             f"Duplicate column names found: {duplicates}"
+        )
+
+    # --------------------------------------------------------
+    # Remove verified identifier columns
+    # --------------------------------------------------------
+
+    ignored_columns = [
+        column
+        for column in IDENTIFIER_COLUMNS
+        if column in df.columns
+    ]
+
+    if ignored_columns:
+
+        print(
+            "--> Ignoring non-model identifier columns: "
+            f"{ignored_columns}"
+        )
+
+        df = df.drop(
+            columns=ignored_columns
         )
 
     # --------------------------------------------------------
