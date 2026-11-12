@@ -7,6 +7,10 @@ import {
 import Icon from "./Icon.jsx";
 import { authService } from "../services/store.js";
 
+/* =========================================================
+   PAGE BREADCRUMBS
+========================================================= */
+
 const CRUMBS = {
   "/": "Home",
   "/dashboard": "Mission Control Dashboard",
@@ -15,15 +19,19 @@ const CRUMBS = {
   "/timeline": "CDM Processing Timeline",
   "/alerts": "Conjunction Alerts",
   "/reports": "Conjunction Reports",
+  "/explainability": "SHAP Explainability",
   "/history": "Activity & Audit History",
   "/settings": "Settings",
   "/admin": "System Monitoring",
   "/help": "Help",
 };
 
+/* =========================================================
+   LOCAL TIME
+========================================================= */
+
 function useLocalTime() {
-  const [now, setNow] =
-    useState(new Date());
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -36,31 +44,32 @@ function useLocalTime() {
   return now;
 }
 
+/* =========================================================
+   TIME FORMATTING
+========================================================= */
+
 function pad(value) {
   return String(value).padStart(2, "0");
 }
 
 function formatLocalTime(date) {
-  return `${pad(
-    date.getHours()
-  )}:${pad(
+  return `${pad(date.getHours())}:${pad(
     date.getMinutes()
-  )}:${pad(
-    date.getSeconds()
-  )}`;
+  )}:${pad(date.getSeconds())}`;
 }
 
 function formatLocalDate(date) {
-  return new Intl.DateTimeFormat(
-    undefined,
-    {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }
-  ).format(date);
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
+
+/* =========================================================
+   HEADER COMPONENT
+========================================================= */
 
 export default function Header({
   onMobileMenu,
@@ -73,21 +82,14 @@ export default function Header({
 
   const now = useLocalTime();
 
-  const localTime =
-    formatLocalTime(now);
-
-  const localDate =
-    formatLocalDate(now);
+  const localTime = formatLocalTime(now);
+  const localDate = formatLocalDate(now);
 
   const crumb =
-    CRUMBS[location.pathname] ||
-    "ASTRA";
+    CRUMBS[location.pathname] || "ASTRA";
 
-  const [notifOpen, setNotifOpen] =
-    useState(false);
-
-  const [profileOpen, setProfileOpen] =
-    useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const currentUser =
     authService.getCurrentUser() || {
@@ -100,9 +102,7 @@ export default function Header({
     currentUser.username === "admin"
       ? "AD"
       : currentUser.username
-        ? currentUser.username
-            .slice(0, 2)
-            .toUpperCase()
+        ? currentUser.username.slice(0, 2).toUpperCase()
         : "AS";
 
   const handleLogout = () => {
@@ -111,44 +111,35 @@ export default function Header({
   };
 
   return (
-    <header
-      className="header"
-      role="banner"
-    >
+    <header className="header" role="banner">
+
       {/* MOBILE MENU */}
+
       <button
         className="icon-btn"
         aria-label="Open menu"
         onClick={onMobileMenu}
         style={{ display: "none" }}
       >
-        <Icon
-          name="menu"
-          size={18}
-        />
+        <Icon name="menu" size={18} />
       </button>
 
       {/* BREADCRUMB */}
+
       <div className="breadcrumb">
         <b>ASTRA</b>
-
-        <span className="sep">
-          /
-        </span>
-
+        <span className="sep">/</span>
         <span>{crumb}</span>
       </div>
 
       {/* SEARCH */}
+
       <div
         className="header-search"
         role="search"
         onClick={onOpenCmd}
       >
-        <Icon
-          name="search"
-          size={16}
-        />
+        <Icon name="search" size={16} />
 
         <input
           placeholder="Search datasets, hashes, reports…"
@@ -156,33 +147,27 @@ export default function Header({
           readOnly
         />
 
-        <span className="kbd">
-          ⌘K
-        </span>
+        <span className="kbd">⌘K</span>
       </div>
 
       {/* RIGHT SIDE */}
+
       <div className="header-right">
+
         {/* MISSION MODE */}
+
         <button
           className={`btn ghost ${
-            missionMode
-              ? "primary"
-              : ""
+            missionMode ? "primary" : ""
           }`}
-          onClick={
-            onToggleMissionMode
-          }
+          onClick={onToggleMissionMode}
           title="Toggle Mission Mode"
           style={{
             fontSize: "11px",
             padding: "4px 10px",
           }}
         >
-          <Icon
-            name="target"
-            size={14}
-          />
+          <Icon name="target" size={14} />
 
           {missionMode
             ? "Exit Mission Control"
@@ -190,18 +175,21 @@ export default function Header({
         </button>
 
         {/* DATA STATUS */}
+
         <div className="status-pill">
           <span className="status-dot" />
           <span>Data Integrity</span>
         </div>
 
         {/* HASH STATUS */}
+
         <div className="status-pill">
           <span className="status-dot" />
           <span>SHA-256 Verified</span>
         </div>
 
         {/* CLOCK */}
+
         <div
           className="header-clock"
           style={{
@@ -211,35 +199,22 @@ export default function Header({
             minWidth: "80px",
           }}
         >
-          <b className="mono">
-            {localTime}
-          </b>
-
-          <small>
-            {localDate}
-          </small>
+          <b className="mono">{localTime}</b>
+          <small>{localDate}</small>
         </div>
 
         {/* NOTIFICATIONS */}
-        <div
-          style={{
-            position: "relative",
-          }}
-        >
+
+        <div style={{ position: "relative" }}>
           <button
             className="icon-btn"
             aria-label="Notifications"
             onClick={() => {
-              setNotifOpen(
-                (value) => !value
-              );
+              setNotifOpen((value) => !value);
               setProfileOpen(false);
             }}
           >
-            <Icon
-              name="bell"
-              size={17}
-            />
+            <Icon name="bell" size={17} />
           </button>
 
           {notifOpen && (
@@ -251,62 +226,46 @@ export default function Header({
                 padding: "14px",
               }}
             >
-              <b>
-                System Status
-              </b>
+              <b>System Status</b>
 
               <p
                 style={{
                   fontSize: "11px",
-                  color:
-                    "var(--text-muted)",
+                  color: "var(--text-muted)",
                   marginTop: "8px",
                 }}
               >
-                ASTRA services are
-                operational.
+                ASTRA services are operational.
               </p>
             </div>
           )}
         </div>
 
         {/* SETTINGS */}
+
         <button
           className="icon-btn"
           aria-label="Settings"
-          onClick={() =>
-            navigate("/settings")
-          }
+          onClick={() => navigate("/settings")}
         >
-          <Icon
-            name="settings"
-            size={17}
-          />
+          <Icon name="settings" size={17} />
         </button>
 
         {/* PROFILE */}
-        <div
-          style={{
-            position: "relative",
-          }}
-        >
+
+        <div style={{ position: "relative" }}>
           <div
             className="avatar"
             aria-label="User profile"
-            title={
-              currentUser.role
-            }
+            title={currentUser.role}
             onClick={() => {
-              setProfileOpen(
-                (value) => !value
-              );
+              setProfileOpen((value) => !value);
               setNotifOpen(false);
             }}
             style={{
               cursor: "pointer",
               background:
-                currentUser.role ===
-                "admin"
+                currentUser.role === "admin"
                   ? "var(--accent)"
                   : "rgba(78, 168, 255, 0.2)",
             }}
@@ -323,20 +282,20 @@ export default function Header({
                 padding: "14px",
               }}
             >
+              {/* USER INFORMATION */}
+
               <div
                 style={{
                   paddingBottom: "10px",
                   marginBottom: "10px",
-                  borderBottom:
-                    "1px solid var(--border)",
+                  borderBottom: "1px solid var(--border)",
                 }}
               >
                 <b
                   style={{
                     fontSize: "13px",
                     display: "block",
-                    color:
-                      "var(--text)",
+                    color: "var(--text)",
                   }}
                 >
                   {currentUser.name}
@@ -347,20 +306,19 @@ export default function Header({
                   style={{
                     fontSize: "10px",
                     marginTop: "4px",
-                    textTransform:
-                      "uppercase",
+                    textTransform: "uppercase",
                   }}
                 >
-                  Role:{" "}
-                  {currentUser.role}
+                  Role: {currentUser.role}
                 </span>
               </div>
+
+              {/* PROFILE ACTIONS */}
 
               <div
                 style={{
                   display: "flex",
-                  flexDirection:
-                    "column",
+                  flexDirection: "column",
                   gap: "6px",
                 }}
               >
@@ -368,43 +326,31 @@ export default function Header({
                   className="btn ghost"
                   style={{
                     width: "100%",
-                    justifyContent:
-                      "flex-start",
+                    justifyContent: "flex-start",
                     fontSize: "12px",
                   }}
                   onClick={() => {
-                    setProfileOpen(
-                      false
-                    );
-                    navigate(
-                      "/settings"
-                    );
+                    setProfileOpen(false);
+                    navigate("/settings");
                   }}
                 >
-                  <Icon
-                    name="settings"
-                    size={14}
-                  />
-
+                  <Icon name="settings" size={14} />
                   Settings
                 </button>
+
+                {/* LOGOUT */}
 
                 <button
                   className="btn primary"
                   style={{
                     width: "100%",
-                    justifyContent:
-                      "center",
+                    justifyContent: "center",
                     fontSize: "12px",
                     marginTop: "6px",
-                    background:
-                      "var(--danger)",
-                    borderColor:
-                      "var(--danger)",
+                    background: "var(--danger)",
+                    borderColor: "var(--danger)",
                   }}
-                  onClick={
-                    handleLogout
-                  }
+                  onClick={handleLogout}
                 >
                   Logout
                 </button>
@@ -412,6 +358,7 @@ export default function Header({
             </div>
           )}
         </div>
+
       </div>
     </header>
   );

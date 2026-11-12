@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+
 import { themeService } from "./services/store.js";
 
 import Layout from "./components/Layout.jsx";
@@ -17,6 +22,7 @@ import History from "./pages/History.jsx";
 import Settings from "./pages/Settings.jsx";
 import AdminMonitoring from "./pages/AdminMonitoring.jsx";
 import Help from "./pages/Help.jsx";
+import SHAPExplainability from "./pages/SHAPExplainability.jsx";
 
 /* =========================================================
    GLOBAL THEME INITIALIZATION
@@ -24,6 +30,7 @@ import Help from "./pages/Help.jsx";
 
 function initializeApplicationTheme() {
   const savedTheme = themeService.getTheme() || "dark";
+
   const selectedTheme =
     savedTheme === "light" ? "light" : "dark";
 
@@ -43,13 +50,16 @@ function initializeApplicationTheme() {
 function ApplicationRoutes() {
   return (
     <Routes>
-      {/* PUBLIC */}
+
+      {/* PUBLIC ROUTES */}
+
       <Route
         path="/login"
         element={<Login />}
       />
 
-      {/* PROTECTED APPLICATION */}
+      {/* PROTECTED APPLICATION ROUTES */}
+
       <Route
         element={
           <ProtectedRoute>
@@ -57,6 +67,7 @@ function ApplicationRoutes() {
           </ProtectedRoute>
         }
       >
+
         <Route
           path="/"
           element={<Home />}
@@ -92,6 +103,13 @@ function ApplicationRoutes() {
           element={<Reports />}
         />
 
+        {/* SHAP EXPLAINABILITY */}
+
+        <Route
+          path="/explainability"
+          element={<SHAPExplainability />}
+        />
+
         <Route
           path="/history"
           element={<History />}
@@ -102,7 +120,8 @@ function ApplicationRoutes() {
           element={<Settings />}
         />
 
-        {/* ADMIN */}
+        {/* ADMIN ROUTE */}
+
         <Route
           path="/admin"
           element={
@@ -112,13 +131,15 @@ function ApplicationRoutes() {
           }
         />
 
-        {/* HELP */}
+        {/* HELP ROUTE */}
+
         <Route
           path="/help"
           element={<Help />}
         />
 
-        {/* LEGACY */}
+        {/* LEGACY ROUTE */}
+
         <Route
           path="/team"
           element={
@@ -129,7 +150,8 @@ function ApplicationRoutes() {
           }
         />
 
-        {/* FALLBACK */}
+        {/* FALLBACK ROUTE */}
+
         <Route
           path="*"
           element={
@@ -139,7 +161,9 @@ function ApplicationRoutes() {
             />
           }
         />
+
       </Route>
+
     </Routes>
   );
 }
@@ -150,6 +174,7 @@ function ApplicationRoutes() {
 
 export default function App() {
   const [isClient, setIsClient] = useState(false);
+
   const [
     BrowserRouterComponent,
     setBrowserRouterComponent,
@@ -165,6 +190,7 @@ export default function App() {
         setBrowserRouterComponent(
           () => router.BrowserRouter
         );
+
         setIsClient(true);
       }
     });

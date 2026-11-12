@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import Icon from "../components/Icon.jsx";
@@ -15,6 +15,26 @@ const MODEL_METRICS = {
   rmse: 4.78,
   highRiskRecall: 77.96,
   weightedF1: 86.06,
+};
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const formatNumber = (value, digits = 4) => {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return "N/A";
+  }
+
+  return number.toFixed(digits);
+};
+
+const formatFeatureName = (name) => {
+  return String(name || "Unknown")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
 /* =========================================================
@@ -37,15 +57,10 @@ function KPI({
           <span
             className="k-icon"
             style={{
-              color:
-                accentColor ||
-                "var(--accent)",
+              color: accentColor || "var(--accent)",
             }}
           >
-            <Icon
-              name={icon}
-              size={16}
-            />
+            <Icon name={icon} size={16} />
           </span>
         )}
       </div>
@@ -53,9 +68,7 @@ function KPI({
       <div
         className="k-value"
         style={{
-          color:
-            accentColor ||
-            "#ffffff",
+          color: accentColor || "#ffffff",
         }}
       >
         {value}
@@ -65,8 +78,7 @@ function KPI({
         <div
           style={{
             fontSize: "10.5px",
-            color:
-              "var(--text-muted)",
+            color: "var(--text-muted)",
             marginTop: "4px",
             lineHeight: 1.4,
           }}
@@ -79,240 +91,542 @@ function KPI({
 }
 
 /* =========================================================
-   MODEL EVALUATION
+   SHAP EXPLAINABILITY OVERVIEW
 ========================================================= */
 
-function ModelEvaluation() {
-  const metrics = [
-    {
-      label: "R²",
-      value: `${MODEL_METRICS.r2}%`,
-      width: MODEL_METRICS.r2,
-      color: "var(--accent)",
-    },
+function SHAPOverview() {
+  const navigate = useNavigate();
 
-    {
-      label: "MAE",
-      value: MODEL_METRICS.mae.toFixed(2),
-      width: 64,
-      color: "var(--success)",
-    },
+  const [prediction, setPrediction] = useState(null);
 
-    {
-      label: "RMSE",
-      value: MODEL_METRICS.rmse.toFixed(2),
-      width: 72,
-      color: "var(--warning)",
-    },
+  useEffect(() => {
+    const loadPrediction = () => {
+      try {
+        const saved = localStorage.getItem(
+          "astra_latest_cdm_prediction"
+        );
 
-    {
-      label: "High-Risk Recall",
-      value: `${MODEL_METRICS.highRiskRecall}%`,
-      width:
-        MODEL_METRICS.highRiskRecall,
-      color: "var(--danger)",
-    },
+        setPrediction(saved ? JSON.parse(saved) : null);
+      } catch (error) {
+        console.error(
+          "Unable to load latest SHAP prediction:",
+          error
+        );
 
-    {
-      label: "Weighted F1",
-      value: `${MODEL_METRICS.weightedF1}%`,
-      width:
-        MODEL_METRICS.weightedF1,
-      color: "var(--accent)",
-    },
-  ];
+        setPrediction(null);
+      }
+    };
+
+    loadPrediction();
+
+    window.addEventListener("focus", loadPrediction);
+
+    return () => {
+      window.removeEventListener("focus", loadPrediction);
+    };
+  }, []);
+
+  const explanation = prediction?.explanation;
+
+  const contributions = useMemo(() => {
+    if (!Array.isArray(explanation?.contributions)) {
+      return [];
+    }
+
+    return [...explanation.contributions]
+      .filter((item) =>
+        Number.isFinite(Number(item.shap_value))
+      )
+      .sort(
+        (a, b) =>
+          Math.abs(Number(b.shap_value)) -
+          Math.abs(Number(a.shap_value))
+      );
+  }, [explanation]);
+
+  const topFeatures = contributions.slice(0, 5);
+
+  const positiveCount = contributions.filter(
+    (item) => Number(item.shap_value) > 0
+  ).length;
+
+  const negativeCount = contributions.filter(
+    (item) => Number(item.shap_value) < 0
+  ).length;
+
+  const negligibleCount = contributions.filter(
+    (item) => Number(item.shap_value) === 0
+  ).length;
+
+  const maxImpact = Math.max(
+    ...topFeatures.map((item) =>
+      Math.abs(Number(item.shap_value))
+    ),
+    0.000001
+  );
+
+  const hasPrediction = Boolean(prediction);
+
+  const hasExplanation = contributions.length > 0;
+
+  const additivityVerified =
+    explanation?.additivity_verified === true;
+
+  const finalPrediction =
+    explanation?.model_prediction ??
+    explanation?.final_prediction ??
+    prediction?.log10Probability;
 
   return (
-    <div
-      className="card hud-card"
-      style={{
-        height: "100%",
-      }}
-    >
+    <div className="card hud-card">
+      {/* HEADER */}
+
       <div className="card-head">
         <h3>
           <Icon
             name="activity"
             size={18}
-            style={{
-              color:
-                "var(--accent)",
-            }}
+            style={{ color: "var(--accent)" }}
           />
 
-          {" "}
-
-          Model Evaluation
+          SHAP Explainability Overview
         </h3>
 
         <span className="chip info">
-          VALIDATED MODEL
+          MODEL INTERPRETABILITY
         </span>
       </div>
 
-      {/* MODEL NAME */}
-      <div
-        style={{
-          padding:
-            "4px 0 18px",
-          borderBottom:
-            "1px solid var(--border)",
-          marginBottom: "18px",
-        }}
-      >
+      {!hasPrediction ? (
         <div
           style={{
-            fontSize: "10px",
-            color:
-              "var(--text-muted)",
-            textTransform:
-              "uppercase",
-            letterSpacing:
-              "0.12em",
+            padding: "35px 15px",
+            textAlign: "center",
           }}
         >
-          Machine Learning Model
-        </div>
+          <Icon
+            name="activity"
+            size={35}
+            style={{ color: "var(--accent)" }}
+          />
 
-        <div
-          className="mono"
-          style={{
-            marginTop: "5px",
-            fontSize: "16px",
-            fontWeight: 700,
-            color:
-              "var(--accent)",
-          }}
-        >
-          CatBoostRegressor
-        </div>
-      </div>
+          <h3 style={{ marginTop: 12 }}>
+            No Prediction Available
+          </h3>
 
-      {/* METRICS */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection:
-            "column",
-          gap: "15px",
-        }}
-      >
-        {metrics.map((metric) => (
-          <div
-            key={metric.label}
+          <p
+            style={{
+              color: "var(--text-muted)",
+              fontSize: 12,
+              marginTop: 8,
+            }}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent:
-                  "space-between",
-                alignItems:
-                  "center",
-                marginBottom:
-                  "6px",
-                fontSize: "12px",
-              }}
-            >
-              <span>
-                {metric.label}
+            Upload a CDM dataset to view its prediction
+            and SHAP feature contributions.
+          </p>
+
+          <button
+            className="btn primary"
+            style={{ marginTop: 16 }}
+            onClick={() => navigate("/upload")}
+          >
+            <Icon name="upload" size={14} />
+            Upload CDM Dataset
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* PREDICTION SUMMARY */}
+
+          <div
+            className="grid cols-3"
+            style={{ marginBottom: 20 }}
+          >
+            <div>
+              <span className="k-label">
+                LATEST RISK
               </span>
 
-              <strong
-                className="mono"
+              <h2
                 style={{
+                  marginTop: 10,
                   color:
-                    metric.color,
+                    prediction.classification === "High Risk"
+                      ? "var(--danger)"
+                      : prediction.classification === "Medium Risk"
+                      ? "var(--warning)"
+                      : "var(--success)",
+                  fontSize: 20,
                 }}
               >
-                {metric.value}
-              </strong>
+                {prediction.classification || "N/A"}
+              </h2>
             </div>
 
-            <div
-              style={{
-                height: "5px",
-                background:
-                  "rgba(255,255,255,0.07)",
-                borderRadius:
-                  "999px",
-                overflow:
-                  "hidden",
-              }}
-            >
-              <span
-                style={{
-                  display: "block",
-                  height: "100%",
-                  width: `${Math.min(
-                    metric.width,
-                    100
-                  )}%`,
-                  background:
-                    metric.color,
-                  borderRadius:
-                    "999px",
-                  boxShadow:
-                    `0 0 10px ${metric.color}`,
-                }}
-              />
+            <div>
+              <span className="k-label">
+                RISK SCORE
+              </span>
+
+              <h2 style={{ marginTop: 10 }}>
+                {formatNumber(prediction.riskScore, 2)}
+              </h2>
+            </div>
+
+            <div>
+              <span className="k-label">
+                FEATURES ANALYSED
+              </span>
+
+              <h2 style={{ marginTop: 10 }}>
+                {hasExplanation
+                  ? contributions.length
+                  : "N/A"}
+              </h2>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* MODEL NOTE */}
-      <div
-        style={{
-          marginTop: "22px",
-          paddingTop: "14px",
-          borderTop:
-            "1px solid var(--border)",
-          fontSize: "10.5px",
-          color:
-            "var(--text-muted)",
-          lineHeight: 1.5,
-        }}
-      >
-        R² represents explained
-        variance. MAE and RMSE
-        are reported on the
-        model risk scale.
-      </div>
+          {/* DATASET INFORMATION */}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 10,
+              padding: "12px 15px",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginBottom: 20,
+            }}
+          >
+            <span>
+              DATASET:{" "}
+              <b style={{ color: "var(--text)" }}>
+                {prediction.fileName || "N/A"}
+              </b>
+            </span>
+
+            <span>
+              MODEL:{" "}
+              <b style={{ color: "var(--text)" }}>
+                CatBoostRegressor
+              </b>
+            </span>
+          </div>
+
+          {!hasExplanation ? (
+            <div
+              style={{
+                padding: 20,
+                textAlign: "center",
+                color: "var(--text-muted)",
+                fontSize: 12,
+              }}
+            >
+              SHAP contributions are not available for
+              this prediction.
+            </div>
+          ) : (
+            <>
+              {/* SHAP VERIFICATION AND FINAL PREDICTION */}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 15,
+                  paddingBottom: 18,
+                  borderBottom: "1px solid var(--border)",
+                  marginBottom: 18,
+                }}
+              >
+                <div>
+                  <span className="k-label">
+                    SHAP ADDITIVITY
+                  </span>
+
+                  <div style={{ marginTop: 8 }}>
+                    <span
+                      className={`chip ${
+                        additivityVerified
+                          ? "success"
+                          : "danger"
+                      }`}
+                    >
+                      {additivityVerified
+                        ? "VERIFIED"
+                        : "NOT VERIFIED"}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="k-label">
+                    FINAL MODEL PREDICTION
+                  </span>
+
+                  <h3
+                    className="mono"
+                    style={{ marginTop: 8 }}
+                  >
+                    {formatNumber(finalPrediction, 6)}
+                  </h3>
+                </div>
+              </div>
+
+              {/* CONTRIBUTION COUNTS */}
+
+              <div
+                className="grid cols-3"
+                style={{ marginBottom: 22 }}
+              >
+                <div
+                  style={{
+                    padding: 13,
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    POSITIVE CONTRIBUTIONS
+                  </span>
+
+                  <h2
+                    style={{
+                      color: "var(--danger)",
+                      marginTop: 7,
+                    }}
+                  >
+                    {positiveCount}
+                  </h2>
+
+                  <small style={{ color: "var(--text-muted)" }}>
+                    Increase prediction
+                  </small>
+                </div>
+
+                <div
+                  style={{
+                    padding: 13,
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    NEGATIVE CONTRIBUTIONS
+                  </span>
+
+                  <h2
+                    style={{
+                      color: "var(--success)",
+                      marginTop: 7,
+                    }}
+                  >
+                    {negativeCount}
+                  </h2>
+
+                  <small style={{ color: "var(--text-muted)" }}>
+                    Decrease prediction
+                  </small>
+                </div>
+
+                <div
+                  style={{
+                    padding: 13,
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    NO CONTRIBUTION
+                  </span>
+
+                  <h2
+                    style={{
+                      color: "var(--accent)",
+                      marginTop: 7,
+                    }}
+                  >
+                    {negligibleCount}
+                  </h2>
+
+                  <small style={{ color: "var(--text-muted)" }}>
+                    Zero SHAP value
+                  </small>
+                </div>
+              </div>
+
+              {/* TOP FIVE FEATURES */}
+
+              <div className="card-head">
+                <h3 style={{ fontSize: 14 }}>
+                  Top Contributing Features
+                </h3>
+
+                <span className="chip info">
+                  TOP 5
+                </span>
+              </div>
+
+              {topFeatures.map((item, index) => {
+                const value = Number(item.shap_value);
+
+                const width =
+                  (Math.abs(value) / maxImpact) * 100;
+
+                const isPositive = value > 0;
+
+                return (
+                  <div
+                    key={`${item.feature}-${index}`}
+                    style={{ marginBottom: 15 }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        fontSize: 11,
+                        marginBottom: 7,
+                      }}
+                    >
+                      <b>
+                        {formatFeatureName(item.feature)}
+                      </b>
+
+                      <span
+                        className="mono"
+                        style={{
+                          color: isPositive
+                            ? "var(--danger)"
+                            : value < 0
+                            ? "var(--success)"
+                            : "var(--accent)",
+                        }}
+                      >
+                        {value > 0 ? "+" : ""}
+                        {formatNumber(value, 6)}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        height: 8,
+                        background: "var(--border)",
+                        borderRadius: 10,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${width}%`,
+                          height: "100%",
+                          background: isPositive
+                            ? "var(--danger)"
+                            : value < 0
+                            ? "var(--success)"
+                            : "var(--accent)",
+                          borderRadius: 10,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* INTERPRETATION */}
+
+              <div
+                style={{
+                  marginTop: 20,
+                  padding: 14,
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  fontSize: 11,
+                  lineHeight: 1.7,
+                  color: "var(--text-muted)",
+                }}
+              >
+                <b style={{ color: "var(--accent)" }}>
+                  Interpretation:
+                </b>{" "}
+                {explanation.interpretation ||
+                  "Positive SHAP values increase the model's predicted log10(Pc), while negative SHAP values decrease it. SHAP contributions explain model behaviour, not physical causation."}
+              </div>
+            </>
+          )}
+
+          {/* OPEN FULL SHAP PAGE */}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: 20,
+            }}
+          >
+            <button
+              className="btn primary glow-btn"
+              onClick={() => navigate("/explainability")}
+            >
+              <Icon name="activity" size={14} />
+              View Complete SHAP Analysis
+              <Icon name="arrow-right" size={14} />
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 /* =========================================================
-   DASHBOARD
+   MAIN DASHBOARD
 ========================================================= */
 
 export default function Dashboard() {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
-  const [refreshing, setRefreshing] =
-    useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const handleRefresh =
-    () => {
-      if (refreshing) {
-        return;
-      }
+  const handleRefresh = () => {
+    if (refreshing) return;
 
-      setRefreshing(true);
+    setRefreshing(true);
 
-      setTimeout(() => {
-        window.location.reload();
-      }, 700);
-    };
+    setTimeout(() => {
+      window.location.reload();
+    }, 700);
+  };
 
   return (
     <div
       style={{
         display: "flex",
-        flexDirection:
-          "column",
-        gap: "20px",
+        flexDirection: "column",
+        gap: 20,
       }}
     >
       {/* =================================================
@@ -321,32 +635,20 @@ export default function Dashboard() {
 
       <div className="page-head">
         <div>
-          <h1>
-            Mission Control
-            Dashboard
-          </h1>
+          <h1>Mission Control Dashboard</h1>
 
           <p>
-            Machine-Learning
-            Early-Warning System
-            · ASTRA
+            Machine-Learning Early-Warning System · ASTRA
           </p>
         </div>
 
         <div className="actions">
           <button
             className="btn ghost light-theme-action"
-            onClick={
-              handleRefresh
-            }
-            disabled={
-              refreshing
-            }
+            onClick={handleRefresh}
+            disabled={refreshing}
           >
-            <Icon
-              name="refresh"
-              size={14}
-            />
+            <Icon name="refresh" size={14} />
 
             {refreshing
               ? "Refreshing..."
@@ -355,24 +657,16 @@ export default function Dashboard() {
 
           <button
             className="btn primary glow-btn"
-            onClick={() =>
-              navigate(
-                "/alerts"
-              )
-            }
+            onClick={() => navigate("/alerts")}
           >
-            <Icon
-              name="bell"
-              size={14}
-            />
-
+            <Icon name="bell" size={14} />
             View Risk Alerts
           </button>
         </div>
       </div>
 
       {/* =================================================
-          FOUR PRIMARY KPIs
+          MODEL PERFORMANCE KPIs
       ================================================= */}
 
       <div className="grid cols-4">
@@ -386,9 +680,7 @@ export default function Dashboard() {
 
         <KPI
           label="MAE"
-          value={MODEL_METRICS.mae.toFixed(
-            2
-          )}
+          value={MODEL_METRICS.mae.toFixed(2)}
           description="Mean absolute error"
           icon="target"
           accentColor="var(--success)"
@@ -396,9 +688,7 @@ export default function Dashboard() {
 
         <KPI
           label="RMSE"
-          value={MODEL_METRICS.rmse.toFixed(
-            2
-          )}
+          value={MODEL_METRICS.rmse.toFixed(2)}
           description="Root mean squared error"
           icon="database"
           accentColor="var(--warning)"
@@ -414,17 +704,16 @@ export default function Dashboard() {
       </div>
 
       {/* =================================================
-          GLOBE + MODEL EVALUATION
+          ORBITAL GLOBE + CONJUNCTION RADAR
+          SIDE BY SIDE
       ================================================= */}
 
       <div
         className="grid"
         style={{
-          gridTemplateColumns:
-            "1.4fr 1fr",
-          gap: "20px",
-          alignItems:
-            "stretch",
+          gridTemplateColumns: "1.35fr 1fr",
+          gap: 20,
+          alignItems: "stretch",
         }}
       >
         {/* ORBITAL GLOBE */}
@@ -432,11 +721,9 @@ export default function Dashboard() {
         <div
           className="card hud-card"
           style={{
-            minHeight:
-              "500px",
+            minHeight: 440,
             display: "flex",
-            flexDirection:
-              "column",
+            flexDirection: "column",
           }}
         >
           <div className="card-head">
@@ -444,21 +731,15 @@ export default function Dashboard() {
               <Icon
                 name="target"
                 size={18}
-                style={{
-                  color:
-                    "var(--accent)",
-                }}
+                style={{ color: "var(--accent)" }}
               />
-
-              {" "}
-
               Orbital Globe
             </h3>
 
             <div
               style={{
                 display: "flex",
-                gap: "8px",
+                gap: 8,
               }}
             >
               <span className="chip info">
@@ -474,71 +755,60 @@ export default function Dashboard() {
           <div
             style={{
               flex: 1,
-              minHeight:
-                "420px",
+              minHeight: 360,
               display: "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             <InteractiveGlobe />
           </div>
         </div>
 
-        {/* MODEL EVALUATION */}
+        {/* CONJUNCTION SCREENING RADAR */}
 
-        <ModelEvaluation />
+        <div
+          className="card hud-card"
+          style={{
+            minHeight: 440,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div className="card-head">
+            <h3>
+              <Icon
+                name="target"
+                size={18}
+                style={{ color: "var(--accent)" }}
+              />
+              Conjunction Screening Radar
+            </h3>
+
+            <span className="chip success">
+              VISUALIZATION
+            </span>
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              minHeight: 350,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <MiniRadar />
+          </div>
+        </div>
       </div>
 
       {/* =================================================
-          CONJUNCTION SCREENING RADAR
+          SHAP EXPLAINABILITY OVERVIEW
       ================================================= */}
 
-      <div
-        className="card hud-card"
-        style={{
-          minHeight:
-            "360px",
-        }}
-      >
-        <div className="card-head">
-          <h3>
-            <Icon
-              name="target"
-              size={18}
-              style={{
-                color:
-                  "var(--accent)",
-              }}
-            />
-
-            {" "}
-
-            Conjunction Screening
-            / Radar
-          </h3>
-
-          <span className="chip success">
-            VISUALIZATION
-          </span>
-        </div>
-
-        <div
-          style={{
-            minHeight:
-              "280px",
-            display: "flex",
-            alignItems:
-              "center",
-            justifyContent:
-              "center",
-          }}
-        >
-          <MiniRadar />
-        </div>
-      </div>
+      <SHAPOverview />
 
       {/* =================================================
           FOOTNOTE
@@ -546,20 +816,17 @@ export default function Dashboard() {
 
       <div
         style={{
-          fontSize: "10.5px",
-          color:
-            "var(--text-muted)",
-          padding:
-            "2px 2px 12px",
-          lineHeight: 1.5,
+          fontSize: 10.5,
+          color: "var(--text-muted)",
+          padding: "2px 2px 12px",
+          lineHeight: 1.6,
         }}
       >
-        Dashboard metrics represent
-        evaluated ASTRA model results.
-        Orbital globe and radar
-        components are interface
-        visualizations and are not
-        live satellite telemetry.
+        Dashboard metrics represent evaluated ASTRA model
+        results. The SHAP overview explains the latest
+        uploaded dataset's first-row prediction. Orbital
+        globe and radar components are interface
+        visualizations and are not live satellite telemetry.
       </div>
     </div>
   );
