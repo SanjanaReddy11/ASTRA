@@ -18,6 +18,7 @@ import predict
 import auth
 
 from database import get_db, init_db
+from audit import init_audit_table, log_event, get_user_logs, get_all_logs
 
 
 # --------------------------------------------------
@@ -32,7 +33,7 @@ app = FastAPI(
 
 origins = os.getenv(
     "ASTRA_CORS_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080",
 ).split(",")
 
 app.add_middleware(
@@ -154,6 +155,7 @@ async def startup_event():
     print("Initializing Astra Backend Server...")
 
     init_db()
+    init_audit_table()
     predict.load_model()
 
     print("Astra Backend Ready.")
@@ -191,6 +193,13 @@ def register_endpoint(payload: RegisterRequest):
             payload.password,
         )
 
+        log_event(
+            event_type="USER_REGISTERED",
+            description=f"New account registered: {payload.email}",
+            user_id=user.get("id"),
+            actor_email=payload.email,
+        )
+
         return {
             "message": "Registration successful.",
             "user": user,
@@ -216,10 +225,25 @@ def login_endpoint(payload: LoginRequest):
     )
 
     if not result:
+        log_event(
+            event_type="LOGIN_FAILED",
+            description=f"Failed login attempt for {payload.email}",
+            actor_email=payload.email,
+        )
+
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password.",
         )
+
+    logged_in_user = result.get("user", {})
+
+    log_event(
+        event_type="USER_LOGIN",
+        description=f"User logged in: {payload.email}",
+        user_id=logged_in_user.get("id"),
+        actor_email=payload.email,
+    )
 
     return result
 
@@ -425,4 +449,37 @@ def get_user_history(current_user=Depends(get_current_user)):
     return {
         "uploads": [dict(row) for row in uploads],
         "predictions": [dict(row) for row in predictions],
+    }
+
+
+# --------------------------------------------------
+# AUDIT LOGS
+# --------------------------------------------------
+
+@app.get("/audit-logs")
+def user_audit_logs(current_user=Depends(get_current_user)):
+    """Return activity belonging only to the authenticated user."""
+
+    logs = get_user_logs(
+        user_id=current_user["id"],
+        limit=100,
+    )
+
+    return {
+        "total": len(logs),
+        "logs": logs,
+    }
+
+
+@app.get("/admin/audit-logs")
+def admin_audit_logs(
+    current_admin=Depends(require_admin),
+):
+    """Return activity across all accounts to administrators."""
+
+    logs = get_all_logs(limit=500)
+
+    return {
+        "total": len(logs),
+        "logs": logs,
     }

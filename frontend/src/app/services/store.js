@@ -1,3 +1,8 @@
+import {
+  loginAccount,
+  registerAccount,
+} from "./api.js";
+
 // =========================================================
 // ASTRA USER-SCOPED STORAGE & SERVICE MODULE
 // =========================================================
@@ -17,7 +22,7 @@ const USERS_KEY = "prahari_registered_users";
 
 const PREDICTION_KEY = "astra_latest_cdm_prediction";
 
-// These keys must remain global for authentication to work.
+// Authentication-related keys remain global.
 const GLOBAL_KEYS = new Set([
   STORAGE_KEYS.AUTH,
   USERS_KEY,
@@ -42,7 +47,6 @@ function getCurrentUserScope() {
       return "guest";
     }
 
-    // Prefer a stable registered-user ID.
     const identity =
       user.id ||
       user.email ||
@@ -151,323 +155,281 @@ export const predictionService = {
 // =========================================================
 
 export const authService = {
-  login: (username, password) => {
-    const cleanUser = username?.trim().toLowerCase();
-    const cleanPass = password?.trim();
 
-    if (cleanUser === "admin" && cleanPass === "admin123") {
-      const session = {
-        username: "admin",
-        role: "admin",
-        name: "Administrator",
-        email: "admin@prahari.gov",
-        loginTime: new Date().toISOString(),
-      };
+  // -------------------------------------------------------
+  // SAVE BACKEND SESSION
+  // -------------------------------------------------------
 
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-      auditService.log("admin", "Login", "Success");
-
-      window.dispatchEvent(new Event("astra:user-changed"));
-
-      return { success: true, user: session };
+  saveSession: (response, rememberMe = false) => {
+    if (!response?.user || !response?.access_token) {
+      throw new Error("Invalid authentication response from server.");
     }
 
-    if (
-      (cleanUser === "investigator" || cleanUser === "user") &&
-      (
-        cleanPass === "investigator123" ||
-        cleanPass === "user123" ||
-        (cleanPass && cleanPass.length >= 6)
-      )
-    ) {
-      const session = {
-        username: cleanUser,
-        role: "user",
-        name:
-          cleanUser === "investigator"
-            ? "Lead Investigator"
-            : "Intel Analyst",
-        email: `${cleanUser}@prahari.gov`,
-        loginTime: new Date().toISOString(),
-      };
+    const user = response.user;
 
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-      auditService.log(cleanUser, "Login", "Success");
-
-      window.dispatchEvent(new Event("astra:user-changed"));
-
-      return { success: true, user: session };
-    }
-
-    const registeredUsers = getStorageItem(USERS_KEY, []);
-
-    const found = registeredUsers.find(
-      (user) =>
-        user.email.toLowerCase() === cleanUser ||
-        user.username?.toLowerCase() === cleanUser
-    );
-
-    if (found && found.password === cleanPass) {
-      const session = {
-        id: found.id,
-        username: found.username || found.email,
-        role: found.role || "user",
-        name: found.name,
-        email: found.email,
-        loginTime: new Date().toISOString(),
-      };
-
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-      auditService.log(found.email, "Login", "Success");
-
-      window.dispatchEvent(new Event("astra:user-changed"));
-
-      return { success: true, user: session };
-    }
-
-    const failedCount =
-      getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0) + 1;
-
-    setStorageItem(STORAGE_KEYS.FAILED_LOGINS, failedCount);
-
-    auditService.log(
-      cleanUser || "Unknown",
-      "Failed Login",
-      `Failed password attempt for user '${cleanUser}'`
-    );
-
-    return {
-      success: false,
-      error: "Invalid credentials. Please verify your email/ID and password.",
+    const session = {
+      id: user.id,
+      username: user.email,
+      name: user.full_name,
+      email: user.email,
+      role: user.role,
+      accessToken: response.access_token,
+      tokenType: response.token_type || "bearer",
+      rememberMe,
+      loginTime: new Date().toISOString(),
     };
+
+    setStorageItem(STORAGE_KEYS.AUTH, session);
+
+    window.dispatchEvent(
+      new Event("astra:user-changed")
+    );
+
+    return session;
   },
 
-  loginUser: (email, password, rememberMe = false) => {
-    const cleanEmail = email?.trim().toLowerCase();
-    const cleanPass = password?.trim();
+  // -------------------------------------------------------
+  // GENERAL LOGIN
+  // -------------------------------------------------------
 
-    if (!cleanEmail || !cleanPass) {
+  login: async (email, password) => {
+    try {
+      const response = await loginAccount(email, password);
+
+      const session = authService.saveSession(response);
+
+      auditService.log(
+        email,
+        "Login",
+        "Successful backend authentication"
+      );
+
+      return {
+        success: true,
+        user: session,
+      };
+
+    } catch (error) {
+      const failedCount =
+        getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0) + 1;
+
+      setStorageItem(
+        STORAGE_KEYS.FAILED_LOGINS,
+        failedCount
+      );
+
+      auditService.log(
+        email || "Unknown",
+        "Failed Login",
+        error.message
+      );
+
+      return {
+        success: false,
+        error: error.message || "Login failed.",
+      };
+    }
+  },
+
+  // -------------------------------------------------------
+  // USER LOGIN
+  // -------------------------------------------------------
+
+  loginUser: async (email, password, rememberMe = false) => {
+    if (!email?.trim() || !password) {
       return {
         success: false,
         error: "Email and password are required.",
       };
     }
 
-    if (
-      cleanEmail === "investigator@prahari.gov" ||
-      cleanEmail === "user@prahari.gov" ||
-      cleanEmail === "investigator"
-    ) {
-      const session = {
-        username: "investigator",
-        role: "user",
-        name: "Intel Analyst",
-        email: "investigator@prahari.gov",
-        rememberMe,
-        loginTime: new Date().toISOString(),
-      };
+    try {
+      const response = await loginAccount(email, password);
 
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-      auditService.log("investigator", "User Login", "Success");
+      if (response.user.role !== "user") {
+        return {
+          success: false,
+          error: "This account does not have user access.",
+        };
+      }
 
-      window.dispatchEvent(new Event("astra:user-changed"));
-
-      return { success: true, user: session };
-    }
-
-    const registeredUsers = getStorageItem(USERS_KEY, []);
-
-    const found = registeredUsers.find(
-      (user) => user.email.toLowerCase() === cleanEmail
-    );
-
-    if (found && found.password === cleanPass) {
-      const session = {
-        id: found.id,
-        username: found.email,
-        role: found.role || "user",
-        name: found.name || "Intel Analyst",
-        email: found.email,
-        rememberMe,
-        loginTime: new Date().toISOString(),
-      };
-
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-      auditService.log(found.email, "User Login", "Success");
-
-      window.dispatchEvent(new Event("astra:user-changed"));
-
-      return { success: true, user: session };
-    }
-
-    // Existing demo login behavior retained.
-    if (cleanEmail.includes("@") && cleanPass.length >= 6) {
-      const session = {
-        username: cleanEmail.split("@")[0],
-        role: "user",
-        name: cleanEmail.split("@")[0].toUpperCase(),
-        email: cleanEmail,
-        rememberMe,
-        loginTime: new Date().toISOString(),
-      };
-
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-      auditService.log(cleanEmail, "User Demo Login", "Success");
-
-      window.dispatchEvent(new Event("astra:user-changed"));
-
-      return { success: true, user: session };
-    }
-
-    const failedCount =
-      getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0) + 1;
-
-    setStorageItem(STORAGE_KEYS.FAILED_LOGINS, failedCount);
-
-    return {
-      success: false,
-      error: "Authentication failed. User email or password invalid.",
-    };
-  },
-
-  loginAdmin: (adminId, password, rememberMe = false) => {
-    const cleanId = adminId?.trim().toLowerCase();
-    const cleanPass = password?.trim();
-
-    if (!cleanId || !cleanPass) {
-      return {
-        success: false,
-        error: "Admin ID and password are required.",
-      };
-    }
-
-    if (
-      (
-        cleanId === "admin" ||
-        cleanId === "adm-9021" ||
-        cleanId.startsWith("adm")
-      ) &&
-      (cleanPass === "admin123" || cleanPass.length >= 6)
-    ) {
-      const session = {
-        username: "admin",
-        role: "admin",
-        name: "Administrator",
-        adminId: cleanId,
-        rememberMe,
-        loginTime: new Date().toISOString(),
-      };
-
-      setStorageItem(STORAGE_KEYS.AUTH, session);
-
-      auditService.log(
-        cleanId,
-        "Admin Login",
-        "Success - Access Granted to Central Command"
+      const session = authService.saveSession(
+        response,
+        rememberMe
       );
 
-      window.dispatchEvent(new Event("astra:user-changed"));
+      auditService.log(
+        email,
+        "User Login",
+        "Successful backend authentication"
+      );
 
-      return { success: true, user: session };
+      return {
+        success: true,
+        user: session,
+      };
+
+    } catch (error) {
+      const failedCount =
+        getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0) + 1;
+
+      setStorageItem(
+        STORAGE_KEYS.FAILED_LOGINS,
+        failedCount
+      );
+
+      auditService.log(
+        email,
+        "User Login Failed",
+        error.message
+      );
+
+      return {
+        success: false,
+        error: error.message || "Authentication failed.",
+      };
     }
-
-    const failedCount =
-      getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0) + 1;
-
-    setStorageItem(STORAGE_KEYS.FAILED_LOGINS, failedCount);
-
-    auditService.log(
-      cleanId,
-      "Admin Login Failed",
-      "Unauthorized clearance level"
-    );
-
-    return {
-      success: false,
-      error: "Invalid Admin ID or Security Key. Access Denied.",
-    };
   },
 
-  signupUser: (name, email, password) => {
-    const cleanEmail = email?.trim().toLowerCase();
-    const cleanPass = password?.trim();
+  // -------------------------------------------------------
+  // ADMIN LOGIN
+  // -------------------------------------------------------
 
-    if (!cleanEmail || !cleanPass || !name) {
+  loginAdmin: async (adminId, password, rememberMe = false) => {
+    if (!adminId?.trim() || !password) {
+      return {
+        success: false,
+        error: "Admin email and password are required.",
+      };
+    }
+
+    try {
+      const response = await loginAccount(
+        adminId,
+        password
+      );
+
+      if (response.user.role !== "admin") {
+        auditService.log(
+          adminId,
+          "Admin Login Failed",
+          "Account does not have administrator privileges."
+        );
+
+        return {
+          success: false,
+          error: "This account does not have administrator privileges.",
+        };
+      }
+
+      const session = authService.saveSession(
+        response,
+        rememberMe
+      );
+
+      auditService.log(
+        adminId,
+        "Admin Login",
+        "Central Command Access Granted"
+      );
+
+      return {
+        success: true,
+        user: session,
+      };
+
+    } catch (error) {
+      const failedCount =
+        getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0) + 1;
+
+      setStorageItem(
+        STORAGE_KEYS.FAILED_LOGINS,
+        failedCount
+      );
+
+      auditService.log(
+        adminId,
+        "Admin Login Failed",
+        error.message
+      );
+
+      return {
+        success: false,
+        error: error.message || "Invalid administrator credentials.",
+      };
+    }
+  },
+
+  // -------------------------------------------------------
+  // USER REGISTRATION
+  // -------------------------------------------------------
+
+  signupUser: async (name, email, password) => {
+    const cleanName = name?.trim();
+    const cleanEmail = email?.trim().toLowerCase();
+
+    if (!cleanName || !cleanEmail || !password) {
       return {
         success: false,
         error: "All fields are required.",
       };
     }
 
-    const registeredUsers = getStorageItem(USERS_KEY, []);
-
-    if (
-      registeredUsers.some(
-        (user) => user.email.toLowerCase() === cleanEmail
-      )
-    ) {
+    if (password.length < 8) {
       return {
         success: false,
-        error: "An account with this email already exists.",
+        error: "Password must contain at least 8 characters.",
       };
     }
 
-    const newUser = {
-      id: `USR-${Date.now()}`,
-      name: name.trim(),
-      email: cleanEmail,
-      password: cleanPass,
-      role: "user",
-      created: new Date().toISOString(),
-    };
+    try {
+      await registerAccount({
+        fullName: cleanName,
+        email: cleanEmail,
+        password,
+      });
 
-    registeredUsers.push(newUser);
+      // Automatically log in after successful registration.
+      const response = await loginAccount(
+        cleanEmail,
+        password
+      );
 
-    setStorageItem(USERS_KEY, registeredUsers);
+      const session = authService.saveSession(response);
 
-    const session = {
-      id: newUser.id,
-      username: cleanEmail,
-      role: "user",
-      name: newUser.name,
-      email: newUser.email,
-      loginTime: new Date().toISOString(),
-    };
+      auditService.log(
+        cleanEmail,
+        "User Account Created",
+        "Registered and logged in successfully"
+      );
 
-    setStorageItem(STORAGE_KEYS.AUTH, session);
+      return {
+        success: true,
+        user: session,
+      };
 
-    auditService.log(
-      cleanEmail,
-      "User Account Created",
-      "Registered & Logged In"
-    );
-
-    window.dispatchEvent(new Event("astra:user-changed"));
-
-    return { success: true, user: session };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || "Account registration failed.",
+      };
+    }
   },
 
-  forgotPassword: (email) => {
-    const cleanEmail = email?.trim().toLowerCase();
+  // -------------------------------------------------------
+  // FORGOT PASSWORD
+  // -------------------------------------------------------
 
-    if (!cleanEmail) {
-      return {
-        success: false,
-        error: "Enter a valid email address.",
-      };
-    }
-
-    auditService.log(
-      cleanEmail,
-      "Password Reset Request",
-      "Verification Token Dispatched"
-    );
-
+  forgotPassword: async () => {
     return {
-      success: true,
-      message: `Security token sent to ${cleanEmail}. Check secure inbox.`,
+      success: false,
+      error: "Password reset is not currently available. Please contact the administrator.",
     };
   },
+
+  // -------------------------------------------------------
+  // LOGOUT
+  // -------------------------------------------------------
 
   logout: () => {
     const current = authService.getCurrentUser();
@@ -482,15 +444,28 @@ export const authService = {
 
     localStorage.removeItem(STORAGE_KEYS.AUTH);
 
-    window.dispatchEvent(new Event("astra:user-changed"));
+    window.dispatchEvent(
+      new Event("astra:user-changed")
+    );
   },
+
+  // -------------------------------------------------------
+  // CURRENT USER
+  // -------------------------------------------------------
 
   getCurrentUser: () => {
     return getStorageItem(STORAGE_KEYS.AUTH, null);
   },
 
+  // -------------------------------------------------------
+  // FAILED LOGIN COUNT
+  // -------------------------------------------------------
+
   getFailedLoginsCount: () => {
-    return getStorageItem(STORAGE_KEYS.FAILED_LOGINS, 0);
+    return getStorageItem(
+      STORAGE_KEYS.FAILED_LOGINS,
+      0
+    );
   },
 };
 
@@ -504,7 +479,10 @@ export const themeService = {
   setTheme: (theme) => {
     setStorageItem(STORAGE_KEYS.THEME, theme);
 
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute(
+      "data-theme",
+      theme
+    );
 
     const user =
       authService.getCurrentUser()?.username || "system";
@@ -517,9 +495,15 @@ export const themeService = {
   },
 
   initTheme: () => {
-    const theme = getStorageItem(STORAGE_KEYS.THEME, "dark");
+    const theme = getStorageItem(
+      STORAGE_KEYS.THEME,
+      "dark"
+    );
 
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute(
+      "data-theme",
+      theme
+    );
   },
 };
 
@@ -562,14 +546,17 @@ export const evidenceService = {
       name: fileData.name,
       size: fileData.size,
       type: fileData.type,
+
       uploadDate: new Date()
         .toISOString()
         .replace("T", " ")
         .substring(0, 19),
+
       uploadedBy:
         fileData.uploadedBy ||
         authService.getCurrentUser()?.username ||
         "investigator",
+
       hash: fileData.hash,
       status: "Uploaded",
       integrity: "VERIFIED",
@@ -577,7 +564,10 @@ export const evidenceService = {
 
     const updated = [newEvidence, ...list];
 
-    setStorageItem(STORAGE_KEYS.EVIDENCE, updated);
+    setStorageItem(
+      STORAGE_KEYS.EVIDENCE,
+      updated
+    );
 
     auditService.log(
       newEvidence.uploadedBy,
@@ -597,7 +587,10 @@ export const evidenceService = {
         : item
     );
 
-    setStorageItem(STORAGE_KEYS.EVIDENCE, updated);
+    setStorageItem(
+      STORAGE_KEYS.EVIDENCE,
+      updated
+    );
 
     const user =
       authService.getCurrentUser()?.username || "system";
@@ -614,7 +607,9 @@ export const evidenceService = {
   verifyIntegrity: (id) => {
     const list = evidenceService.getEvidenceList();
 
-    const item = list.find((entry) => entry.id === id);
+    const item = list.find(
+      (entry) => entry.id === id
+    );
 
     if (!item) return false;
 
@@ -631,9 +626,17 @@ export const evidenceService = {
   },
 
   calculateCasePriority: (count) => {
-    if (count <= 2) return { label: "Low", class: "low" };
-    if (count <= 5) return { label: "Medium", class: "medium" };
-    if (count <= 8) return { label: "High", class: "high" };
+    if (count <= 2) {
+      return { label: "Low", class: "low" };
+    }
+
+    if (count <= 5) {
+      return { label: "Medium", class: "medium" };
+    }
+
+    if (count <= 8) {
+      return { label: "High", class: "high" };
+    }
 
     return { label: "Critical", class: "critical" };
   },
@@ -652,13 +655,19 @@ export async function calculateSHA256(file) {
       buffer
     );
 
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashArray = Array.from(
+      new Uint8Array(hashBuffer)
+    );
 
     return hashArray
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join("");
+
   } catch (error) {
-    console.error("SHA-256 computation error:", error);
+    console.error(
+      "SHA-256 computation error:",
+      error
+    );
 
     throw new Error("SHA-256 computation failed.");
   }
@@ -670,7 +679,10 @@ export async function calculateSHA256(file) {
 
 export const auditService = {
   getLogs: () => {
-    return getStorageItem(STORAGE_KEYS.AUDIT_LOGS, []);
+    return getStorageItem(
+      STORAGE_KEYS.AUDIT_LOGS,
+      []
+    );
   },
 
   log: (user, action, result) => {
@@ -678,10 +690,12 @@ export const auditService = {
 
     const newLog = {
       id: `AUD-${Date.now()}`,
+
       timestamp: new Date()
         .toISOString()
         .replace("T", " ")
         .substring(0, 19),
+
       user: user || "system",
       action,
       result,
@@ -702,7 +716,10 @@ export const auditService = {
 
 export const reportService = {
   getReports: () => {
-    return getStorageItem(STORAGE_KEYS.REPORTS, []);
+    return getStorageItem(
+      STORAGE_KEYS.REPORTS,
+      []
+    );
   },
 
   addReport: (title, type, summary) => {
@@ -735,7 +752,10 @@ export const reportService = {
   },
 
   downloadFile: (content, filename, mimeType) => {
-    const blob = new Blob([content], { type: mimeType });
+    const blob = new Blob(
+      [content],
+      { type: mimeType }
+    );
 
     const url = URL.createObjectURL(blob);
 
@@ -769,18 +789,24 @@ export const reportService = {
 
 export const aiAssistantService = {
   getChatHistory: () => {
-    return getStorageItem(STORAGE_KEYS.CHAT_HISTORY, [
-      {
-        id: "msg-1",
-        sender: "assistant",
-        text: "Hello Investigator. I am the ASTRA AI Assistant.",
-        timestamp: new Date().toLocaleTimeString(),
-      },
-    ]);
+    return getStorageItem(
+      STORAGE_KEYS.CHAT_HISTORY,
+      [
+        {
+          id: "msg-1",
+          sender: "assistant",
+          text: "Hello Investigator. I am the ASTRA AI Assistant.",
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]
+    );
   },
 
   saveChatHistory: (messages) => {
-    setStorageItem(STORAGE_KEYS.CHAT_HISTORY, messages);
+    setStorageItem(
+      STORAGE_KEYS.CHAT_HISTORY,
+      messages
+    );
   },
 
   getResponseForPrompt: (promptAction) => {

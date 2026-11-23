@@ -1,7 +1,10 @@
 import getpass
 
+from pwdlib import PasswordHash
 from database import init_db, get_db
-from auth import hash_password
+
+
+password_hasher = PasswordHash.recommended()
 
 
 def create_admin():
@@ -28,7 +31,6 @@ def create_admin():
         return
 
     with get_db() as db:
-
         existing_admin = db.execute(
             "SELECT id FROM users WHERE role = 'admin'"
         ).fetchone()
@@ -46,6 +48,8 @@ def create_admin():
             print("An account with this email already exists.")
             return
 
+        password_hash = password_hasher.hash(password)
+
         db.execute(
             """
             INSERT INTO users (
@@ -56,11 +60,7 @@ def create_admin():
             )
             VALUES (?, ?, ?, 'admin')
             """,
-            (
-                full_name,
-                email,
-                hash_password(password),
-            ),
+            (full_name, email, password_hash),
         )
 
     print("\nAdministrator account created successfully!")
@@ -68,4 +68,3 @@ def create_admin():
 
 if __name__ == "__main__":
     create_admin()
-

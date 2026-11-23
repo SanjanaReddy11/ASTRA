@@ -111,7 +111,7 @@ export default function Sidebar({
     navItems.push({
 
       to: "/admin",
-      label: "Admin Center",
+      label: "System Monitoring",
       icon: "shield",
 
     });
