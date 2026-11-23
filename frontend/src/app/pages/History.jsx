@@ -1,24 +1,123 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Icon from "../components/Icon.jsx";
 import {
-  auditService,
   evidenceService,
   reportService,
 } from "../services/store.js";
+import { fetchAuditLogs } from "../services/api.js";
 
 export default function History() {
   const [logs, setLogs] = useState([]);
   const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [uploads, setUploads] = useState([]);
+  const [reports, setReports] = useState([]);
+
+  // Determine whether the logged-in account is an administrator.
+  const getIsAdmin = () => {
+    try {
+      const session = JSON.parse(
+        localStorage.getItem("prahari_auth_session") || "{}"
+      );
+
+      return String(session.role || "").toLowerCase() === "admin";
+    } catch {
+      return false;
+    }
+  };
+
+  // Convert backend audit records into the existing table format.
+  const normalizeLog = (log) => {
+    let metadata = {};
+
+    try {
+      metadata =
+        typeof log.metadata_json === "string"
+          ? JSON.parse(log.metadata_json || "{}")
+          : log.metadata_json || {};
+    } catch {
+      metadata = {};
+    }
+
+    const eventType = log.event_type || "SYSTEM_EVENT";
+
+    const action = eventType
+      .replaceAll("_", " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+
+    const user =
+      log.full_name ||
+      log.actor_email ||
+      (log.user_id ? `User ${log.user_id}` : "Unknown User");
+
+    const details =
+      log.description ||
+      metadata.description ||
+      metadata.message ||
+      "Activity recorded.";
+
+    return {
+      id: log.id,
+      timestamp: log.created_at || log.timestamp || "",
+      user,
+      action,
+      result: details,
+      email: log.actor_email || "",
+      userId: log.user_id ?? null,
+      eventType,
+      metadata,
+    };
+  };
+
+  // Fetch centralized backend audit history.
+  const loadAuditLogs = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const isAdmin = getIsAdmin();
+
+      // Admin gets all users' events.
+      // Regular users get only their own events.
+      const backendLogs = await fetchAuditLogs(isAdmin);
+
+      const normalizedLogs = backendLogs
+        .map(normalizeLog)
+        .sort(
+          (a, b) =>
+            new Date(b.timestamp).getTime() -
+            new Date(a.timestamp).getTime()
+        );
+
+      setLogs(normalizedLogs);
+    } catch (err) {
+      setError(
+        err.message ||
+          "Unable to load audit history. Please log in again."
+      );
+      setLogs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    setLogs(auditService.getLogs());
-  }, []);
+    setUploads(evidenceService.getEvidenceList());
+    setReports(reportService.getReports());
+
+    loadAuditLogs();
+  }, [loadAuditLogs]);
 
   const filteredLogs = logs.filter((log) => {
     const text = `
       ${log.id}
       ${log.timestamp}
       ${log.user}
+      ${log.email}
+      ${log.userId}
       ${log.action}
       ${log.result}
     `.toLowerCase();
@@ -26,93 +125,80 @@ export default function History() {
     return text.includes(q.toLowerCase());
   });
 
+  // Safely escape CSV values.
+  const csvEscape = (value) => {
+    return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  };
+
   /* -------------------- EXPORT CSV -------------------- */
   const handleExportCSV = () => {
-    const uploads =
-      evidenceService.getEvidenceList();
-
-    const reports =
-      reportService.getReports();
-
-    const auditLogs =
-      auditService.getLogs();
-
     let csvContent =
-      "TYPE,ID,TIMESTAMP/DATE,USER/AUTHOR,DETAILS,EXTRA\n";
+      "TYPE,ID,TIMESTAMP/DATE,USER/EMAIL,DETAILS,EXTRA\n";
 
-    auditLogs.forEach((log) => {
-      csvContent +=
-        `AUDIT,${log.id},"${log.timestamp}",` +
-        `"${log.user}","${log.action}",` +
-        `"${log.result}"\n`;
+    logs.forEach((log) => {
+      csvContent += [
+        "AUDIT",
+        csvEscape(log.id),
+        csvEscape(log.timestamp),
+        csvEscape(log.email || log.user),
+        csvEscape(log.action),
+        csvEscape(log.result),
+      ].join(",") + "\n";
     });
 
     uploads.forEach((upload) => {
-      csvContent +=
-        `CDM_UPLOAD,${upload.id},"${upload.uploadDate}",` +
-        `"${upload.uploadedBy}","${upload.name}",` +
-        `"SHA-256: ${upload.hash}"\n`;
+      csvContent += [
+        "CDM_UPLOAD",
+        csvEscape(upload.id),
+        csvEscape(upload.uploadDate),
+        csvEscape(upload.uploadedBy),
+        csvEscape(upload.name),
+        csvEscape(`SHA-256: ${upload.hash}`),
+      ].join(",") + "\n";
     });
 
     reports.forEach((report) => {
-      csvContent +=
-        `REPORT,${report.id},"${report.date}",` +
-        `"System","${report.title}",` +
-        `"Format: ${report.format}"\n`;
+      csvContent += [
+        "REPORT",
+        csvEscape(report.id),
+        csvEscape(report.date),
+        csvEscape("System"),
+        csvEscape(report.title),
+        csvEscape(`Format: ${report.format}`),
+      ].join(",") + "\n";
     });
 
     reportService.downloadFile(
       csvContent,
-      "prahari_activity_export.csv",
+      "astra_activity_export.csv",
       "text/csv"
     );
   };
 
   /* -------------------- EXPORT JSON -------------------- */
   const handleExportJSON = () => {
-    const uploads =
-      evidenceService.getEvidenceList();
-
-    const reports =
-      reportService.getReports();
-
-    const auditLogs =
-      auditService.getLogs();
-
     const exportData = {
-      system:
-        "ASTRA Conjunction Risk Screening System",
+      system: "ASTRA Conjunction Risk Screening System",
 
-      exportTimestamp:
-        new Date().toISOString(),
+      exportTimestamp: new Date().toISOString(),
 
+      auditLogs: logs,
       uploads,
       reports,
-      auditLogs,
     };
 
-    const jsonString =
-      JSON.stringify(
-        exportData,
-        null,
-        2
-      );
-
     reportService.downloadFile(
-      jsonString,
-      "prahari_activity_export.json",
+      JSON.stringify(exportData, null, 2),
+      "astra_activity_export.json",
       "application/json"
     );
   };
 
   /* -------------------- ACTION CHIP -------------------- */
   const getActionChip = (action = "") => {
-    const normalized =
-      action.toLowerCase();
+    const normalized = action.toLowerCase();
 
-    if (
-      normalized.includes("login")
-    ) {
+    if (normalized.includes("login")) {
       return "info";
     }
 
@@ -124,9 +210,7 @@ export default function History() {
       return "success";
     }
 
-    if (
-      normalized.includes("report")
-    ) {
+    if (normalized.includes("report")) {
       return "info";
     }
 
@@ -150,8 +234,19 @@ export default function History() {
 
           <p>
             Track CDM uploads, predictions, report
-            generation, account activity and system
-            events.
+            generation, account activity and system events.
+          </p>
+
+          <p
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 5,
+            }}
+          >
+            {getIsAdmin()
+              ? "Administrator view: activity from all registered users."
+              : "Showing activity associated with your account."}
           </p>
         </div>
 
@@ -169,28 +264,29 @@ export default function History() {
               margin: 0,
             }}
           >
-            <Icon
-              name="search"
-              size={14}
-            />
+            <Icon name="search" size={14} />
 
             <input
               value={q}
-              onChange={(e) =>
-                setQ(e.target.value)
-              }
+              onChange={(e) => setQ(e.target.value)}
               placeholder="Search activity..."
             />
           </div>
 
           <button
             className="btn ghost"
+            onClick={loadAuditLogs}
+            disabled={loading}
+          >
+            <Icon name="activity" size={14} />{" "}
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+
+          <button
+            className="btn ghost"
             onClick={handleExportCSV}
           >
-            <Icon
-              name="download"
-              size={14}
-            />{" "}
+            <Icon name="download" size={14} />{" "}
             Export CSV
           </button>
 
@@ -198,10 +294,7 @@ export default function History() {
             className="btn primary"
             onClick={handleExportJSON}
           >
-            <Icon
-              name="download"
-              size={14}
-            />{" "}
+            <Icon name="download" size={14} />{" "}
             Export JSON
           </button>
         </div>
@@ -215,8 +308,7 @@ export default function History() {
               name="activity"
               size={16}
               style={{
-                color:
-                  "var(--accent)",
+                color: "var(--accent)",
               }}
             />{" "}
             Astra Activity Log
@@ -226,6 +318,18 @@ export default function History() {
             {filteredLogs.length} EVENTS
           </span>
         </div>
+
+        {error && (
+          <div
+            style={{
+              padding: 14,
+              color: "#ff7777",
+              fontSize: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         <div className="table-wrap">
           <table className="data">
@@ -240,76 +344,91 @@ export default function History() {
             </thead>
 
             <tbody>
-              {filteredLogs.length === 0 ? (
+              {loading ? (
                 <tr>
                   <td
                     colSpan="5"
                     style={{
-                      textAlign:
-                        "center",
+                      textAlign: "center",
                       padding: "30px",
-                      color:
-                        "var(--text-muted)",
+                      color: "var(--text-muted)",
                     }}
                   >
-                    No activity records
-                    found.
+                    Loading centralized audit history...
+                  </td>
+                </tr>
+              ) : filteredLogs.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan="5"
+                    style={{
+                      textAlign: "center",
+                      padding: "30px",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    No activity records found.
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map(
-                  (log) => (
-                    <tr
-                      key={log.id}
+                filteredLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td
+                      className="mono"
+                      style={{
+                        fontWeight: 700,
+                        color: "var(--accent)",
+                      }}
                     >
-                      <td
-                        className="mono"
-                        style={{
-                          fontWeight: 700,
-                          color:
-                            "var(--accent)",
-                        }}
-                      >
-                        {log.id}
-                      </td>
+                      {log.id}
+                    </td>
 
-                      <td
-                        className="mono"
-                        style={{
-                          fontSize:
-                            11.5,
-                        }}
-                      >
-                        {log.timestamp}
-                      </td>
+                    <td
+                      className="mono"
+                      style={{
+                        fontSize: 11.5,
+                      }}
+                    >
+                      {log.timestamp
+                        ? new Date(log.timestamp).toLocaleString()
+                        : "—"}
+                    </td>
 
-                      <td>
-                        <b>
-                          {log.user}
-                        </b>
-                      </td>
+                    <td>
+                      <b>{log.user}</b>
 
-                      <td>
-                        <span
-                          className={`chip ${getActionChip(
-                            log.action
-                          )}`}
+                      {log.email && (
+                        <div
+                          style={{
+                            fontSize: 10.5,
+                            color: "var(--text-muted)",
+                            marginTop: 3,
+                          }}
                         >
-                          {log.action}
-                        </span>
-                      </td>
+                          {log.email}
+                        </div>
+                      )}
+                    </td>
 
-                      <td
-                        style={{
-                          color:
-                            "var(--text-secondary)",
-                        }}
+                    <td>
+                      <span
+                        className={`chip ${getActionChip(
+                          log.action
+                        )}`}
                       >
-                        {log.result}
-                      </td>
-                    </tr>
-                  )
-                )
+                        {log.action}
+                      </span>
+                    </td>
+
+                    <td
+                      style={{
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {log.result}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -326,10 +445,7 @@ export default function History() {
         <div className="card hud-card">
           <div className="card-head">
             <h3>
-              <Icon
-                name="upload"
-                size={16}
-              />{" "}
+              <Icon name="upload" size={16} />{" "}
               CDM Upload Activity
             </h3>
           </div>
@@ -340,33 +456,24 @@ export default function History() {
               marginTop: 8,
             }}
           >
-            {
-              evidenceService
-                .getEvidenceList()
-                .length
-            }
+            {uploads.length}
           </div>
 
           <p
             style={{
               fontSize: 11.5,
-              color:
-                "var(--text-muted)",
+              color: "var(--text-muted)",
               marginTop: 4,
             }}
           >
-            Dataset records available
-            in the application.
+            Dataset records available in the application.
           </p>
         </div>
 
         <div className="card hud-card">
           <div className="card-head">
             <h3>
-              <Icon
-                name="file"
-                size={16}
-              />{" "}
+              <Icon name="file" size={16} />{" "}
               Generated Reports
             </h3>
           </div>
@@ -377,33 +484,24 @@ export default function History() {
               marginTop: 8,
             }}
           >
-            {
-              reportService
-                .getReports()
-                .length
-            }
+            {reports.length}
           </div>
 
           <p
             style={{
               fontSize: 11.5,
-              color:
-                "var(--text-muted)",
+              color: "var(--text-muted)",
               marginTop: 4,
             }}
           >
-            Saved conjunction risk
-            reports.
+            Saved conjunction risk reports.
           </p>
         </div>
 
         <div className="card hud-card">
           <div className="card-head">
             <h3>
-              <Icon
-                name="activity"
-                size={16}
-              />{" "}
+              <Icon name="activity" size={16} />{" "}
               Activity Events
             </h3>
           </div>
@@ -420,13 +518,11 @@ export default function History() {
           <p
             style={{
               fontSize: 11.5,
-              color:
-                "var(--text-muted)",
+              color: "var(--text-muted)",
               marginTop: 4,
             }}
           >
-            Recorded application
-            activity events.
+            Centralized backend audit events.
           </p>
         </div>
       </div>
@@ -436,16 +532,12 @@ export default function History() {
         className="card hud-card"
         style={{
           marginTop: 20,
-          borderColor:
-            "var(--accent-border)",
+          borderColor: "var(--accent-border)",
         }}
       >
         <div className="card-head">
           <h3>
-            <Icon
-              name="database"
-              size={16}
-            />{" "}
+            <Icon name="database" size={16} />{" "}
             Activity Export
           </h3>
 
@@ -457,16 +549,15 @@ export default function History() {
         <p
           style={{
             fontSize: 12,
-            color:
-              "var(--text-secondary)",
+            color: "var(--text-secondary)",
             lineHeight: 1.6,
             marginBottom: 0,
           }}
         >
-          Export Astra application activity,
-          CDM upload records, generated reports
-          and audit events for project review,
-          troubleshooting or archival purposes.
+          Export ASTRA application activity, CDM upload
+          records, generated reports and centralized audit
+          events for project review, troubleshooting or
+          archival purposes.
         </p>
       </div>
     </div>

@@ -49,6 +49,7 @@ async function apiRequest(endpoint, options = {}, authenticated = false) {
 
     try {
       const errorData = await response.json();
+
       message =
         typeof errorData.detail === "string"
           ? errorData.detail
@@ -67,10 +68,16 @@ async function apiRequest(endpoint, options = {}, authenticated = false) {
  * Register a new user.
  * Backend: POST /auth/register
  */
-export async function registerAccount({ fullName, email, password }) {
+export async function registerAccount({
+  fullName,
+  email,
+  password,
+}) {
   return apiRequest("/auth/register", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       full_name: fullName,
       email: email.trim().toLowerCase(),
@@ -86,7 +93,9 @@ export async function registerAccount({ fullName, email, password }) {
 export async function loginAccount(email, password) {
   return apiRequest("/auth/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       email: email.trim().toLowerCase(),
       password,
@@ -100,6 +109,31 @@ export async function loginAccount(email, password) {
  */
 export async function fetchCurrentUser() {
   return apiRequest("/auth/me", {}, true);
+}
+
+/**
+ * Fetch centralized audit logs.
+ *
+ * Admin:
+ * GET /admin/audit-logs
+ * Returns audit events from all users.
+ *
+ * Regular user:
+ * GET /audit-logs
+ * Returns only the authenticated user's events.
+ */
+export async function fetchAuditLogs(isAdmin = false) {
+  const endpoint = isAdmin
+    ? "/admin/audit-logs"
+    : "/audit-logs";
+
+  const response = await apiRequest(
+    endpoint,
+    {},
+    true
+  );
+
+  return response.logs || [];
 }
 
 /**
@@ -144,7 +178,9 @@ export async function predictFromFeatures(
     "/predict/json",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         sensor_id: sensorId || "SENSOR-001",
         location: location || "Zone A",
@@ -183,11 +219,16 @@ export async function checkBackendHealth() {
   try {
     const response = await fetch(`${API_BASE_URL}/`);
 
-    if (!response.ok) return { online: false };
+    if (!response.ok) {
+      return { online: false };
+    }
 
     const data = await response.json();
 
-    return { online: true, ...data };
+    return {
+      online: true,
+      ...data,
+    };
   } catch {
     return { online: false };
   }
