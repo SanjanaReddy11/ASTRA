@@ -90,3 +90,6 @@ build/
 *.tmp
 *.temp
 *.bak
+
+# ASTRA local database
+backend/astra.db

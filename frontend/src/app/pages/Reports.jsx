@@ -7,135 +7,425 @@ import {
   authService,
 } from "../services/store.js";
 
+const MODEL_METRICS = {
+  r2: "76.6%",
+  mae: "3.20",
+  rmse: "4.78",
+  highRiskRecall: "77.96%",
+  weightedF1: "86.06%",
+};
+
+const RISK_DISTRIBUTION = {
+  low: "50.56%",
+  medium: "17.17%",
+  high: "32.27%",
+};
+
+/*
+ * Only these two report types belong to the
+ * current ASTRA reporting workflow.
+ *
+ * Legacy/mock reports with other titles are
+ * intentionally excluded from the UI.
+ */
+const VALID_REPORT_TITLES = [
+  "Conjunction Screening Brief",
+  "Comprehensive Conjunction Risk Report",
+];
+
+function getLatestPrediction() {
+  try {
+    const raw = localStorage.getItem(
+      "astra_latest_cdm_prediction"
+    );
+
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error(
+      "Could not read latest CDM prediction:",
+      error
+    );
+
+    return null;
+  }
+}
+
+function formatProbability(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "N/A";
+  }
+
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return "N/A";
+  }
+
+  return numericValue.toExponential(6);
+}
+
+function formatRiskScore(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "N/A";
+  }
+
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return "N/A";
+  }
+
+  return String(Math.round(numericValue));
+}
+
+function getRiskLabel(prediction) {
+  if (!prediction) {
+    return "NO PREDICTION";
+  }
+
+  const value = String(
+    prediction.classification || ""
+  ).toUpperCase();
+
+  if (value.includes("HIGH")) {
+    return "HIGH";
+  }
+
+  if (value.includes("MEDIUM")) {
+    return "MEDIUM";
+  }
+
+  if (value.includes("LOW")) {
+    return "LOW";
+  }
+
+  return value || "UNKNOWN";
+}
+
+function getRiskColor(doc, classification) {
+  const risk = String(
+    classification || ""
+  ).toUpperCase();
+
+  if (risk === "HIGH") {
+    doc.setTextColor(210, 55, 55);
+    return;
+  }
+
+  if (risk === "MEDIUM") {
+    doc.setTextColor(190, 125, 20);
+    return;
+  }
+
+  if (risk === "LOW") {
+    doc.setTextColor(35, 145, 85);
+    return;
+  }
+
+  doc.setTextColor(80, 80, 80);
+}
+
+function getRelevantReports() {
+  const allReports =
+    reportService.getReports() || [];
+
+  /*
+   * Remove all legacy/mock report types.
+   * Only ASTRA's two current report types remain.
+   */
+  return allReports
+    .filter((report) =>
+      VALID_REPORT_TITLES.includes(
+        report.title
+      )
+    )
+    .slice(0, 2);
+}
+
 export default function Reports() {
   const [reports, setReports] = useState([]);
-  const [activeReport, setActiveReport] = useState(null);
-  const [datasetList, setDatasetList] = useState([]);
+  const [activeReport, setActiveReport] =
+    useState(null);
+  const [datasetList, setDatasetList] =
+    useState([]);
+  const [latestPrediction, setLatestPrediction] =
+    useState(null);
 
   useEffect(() => {
-    setReports(reportService.getReports());
-    setDatasetList(evidenceService.getEvidenceList());
+    setReports(getRelevantReports());
+
+    setDatasetList(
+      evidenceService.getEvidenceList() || []
+    );
+
+    setLatestPrediction(
+      getLatestPrediction()
+    );
   }, []);
 
   const refreshReports = () => {
-    setReports(reportService.getReports());
-    setDatasetList(evidenceService.getEvidenceList());
+    setReports(getRelevantReports());
+
+    setDatasetList(
+      evidenceService.getEvidenceList() || []
+    );
+
+    setLatestPrediction(
+      getLatestPrediction()
+    );
   };
 
+  /*
+   * ------------------------------------------------------------
+   * GENERATE SCREENING BRIEF
+   * ------------------------------------------------------------
+   */
+
   const handleGenerateBrief = () => {
-    const title = "Conjunction Screening Brief";
+    const prediction =
+      getLatestPrediction();
+
+    const risk =
+      getRiskLabel(prediction);
+
+    const title =
+      "Conjunction Screening Brief";
+
+    const predictionSection =
+      prediction
+        ? `UPLOADED CDM PREDICTION\n` +
+          `File: ${prediction.fileName}\n` +
+          `Risk Classification: ${risk}\n` +
+          `Risk Score: ${formatRiskScore(
+            prediction.riskScore
+          )}\n` +
+          `log10(Pc): ${
+            prediction.log10Probability ??
+            "N/A"
+          }\n` +
+          `Collision Probability: ${formatProbability(
+            prediction.probability
+          )}\n` +
+          `Prediction Horizon: +1 CDM\n` +
+          `Alert Triggered: ${
+            prediction.isAlert
+              ? "YES"
+              : "NO"
+          }\n\n`
+        : `UPLOADED CDM PREDICTION\n` +
+          `No uploaded CDM prediction is currently available.\n\n`;
 
     const summary =
       `ASTRA CONJUNCTION SCREENING BRIEF\n\n` +
       `Generated: ${new Date().toLocaleString()}\n\n` +
-      `DATASET SUMMARY\n` +
-      `CDM Datasets Available: ${datasetList.length}\n` +
-      `Dataset Integrity: SHA-256 verification available\n\n` +
+      predictionSection +
       `MODEL\n` +
       `Model: CatBoostRegressor\n` +
       `Prediction Horizon: +1 CDM\n` +
       `Output: Future Numerical Risk\n` +
       `Classification: Low / Medium / High\n\n` +
       `MODEL PERFORMANCE\n` +
-      `R²: 76.6%\n` +
-      `MAE: 3.20\n` +
-      `RMSE: 4.78\n` +
-      `High-Risk Recall: 77.96%\n` +
-      `Weighted F1: 86.06%\n\n` +
-      `RISK CLASSIFICATION\n` +
-      `Low Risk: 50.56%\n` +
-      `Medium Risk: 17.17%\n` +
-      `High Risk: 32.27%\n\n` +
-      `WORKFLOW\n` +
-      `CDM ingestion → validation → preprocessing → ` +
-      `CatBoost future-risk prediction → risk classification → ` +
-      `alert generation → report generation`;
+      `R²: ${MODEL_METRICS.r2}\n` +
+      `MAE: ${MODEL_METRICS.mae}\n` +
+      `RMSE: ${MODEL_METRICS.rmse}\n` +
+      `High-Risk Recall: ${MODEL_METRICS.highRiskRecall}\n` +
+      `Weighted F1: ${MODEL_METRICS.weightedF1}`;
 
-    const newReport = reportService.addReport(
-      title,
-      "TXT",
-      summary
-    );
+    const newReport =
+      reportService.addReport(
+        title,
+        "TXT",
+        summary
+      );
 
-    setReports(reportService.getReports());
+    setReports(getRelevantReports());
+
     setActiveReport(newReport);
+
+    setLatestPrediction(
+      getLatestPrediction()
+    );
   };
 
+  /*
+   * ------------------------------------------------------------
+   * GENERATE COMPREHENSIVE REPORT
+   * ------------------------------------------------------------
+   */
+
   const handleGenerateReport = () => {
-    const title = "Comprehensive Conjunction Risk Report";
+    const prediction =
+      getLatestPrediction();
+
+    const risk =
+      getRiskLabel(prediction);
+
+    const title =
+      "Comprehensive Conjunction Risk Report";
+
+    const predictionSection =
+      prediction
+        ? `UPLOADED CDM PREDICTION\n` +
+          `Uploaded Dataset: ${prediction.fileName}\n` +
+          `Risk Classification: ${risk}\n` +
+          `Risk Score: ${formatRiskScore(
+            prediction.riskScore
+          )}\n` +
+          `log10(Pc): ${
+            prediction.log10Probability ??
+            "N/A"
+          }\n` +
+          `Collision Probability: ${formatProbability(
+            prediction.probability
+          )}\n` +
+          `Prediction Horizon: +1 CDM\n` +
+          `Alert Triggered: ${
+            prediction.isAlert
+              ? "YES"
+              : "NO"
+          }\n\n`
+        : `UPLOADED CDM PREDICTION\n` +
+          `No uploaded CDM prediction is currently available.\n\n`;
 
     const summary =
       `ASTRA COMPREHENSIVE CONJUNCTION RISK REPORT\n\n` +
       `Generated: ${new Date().toLocaleString()}\n\n` +
-      `1. DATA INTAKE\n` +
+      `DATA INTAKE\n` +
       `CDM datasets available: ${datasetList.length}\n` +
-      `Dataset integrity is verified using SHA-256 where available.\n\n` +
-      `2. PREDICTION MODEL\n` +
+      `Dataset integrity: SHA-256 verification supported\n\n` +
+      `PREDICTION MODEL\n` +
       `Model: CatBoostRegressor\n` +
       `Prediction target: Future numerical risk\n` +
       `Prediction horizon: +1 CDM\n\n` +
-      `3. MODEL PERFORMANCE\n` +
-      `R²: 76.6%\n` +
-      `MAE: 3.20\n` +
-      `RMSE: 4.78\n` +
-      `High-Risk Recall: 77.96%\n` +
-      `Weighted F1: 86.06%\n\n` +
-      `4. RISK CLASSIFICATION\n` +
-      `Low: 50.56%\n` +
-      `Medium: 17.17%\n` +
-      `High: 32.27%\n\n` +
-      `5. PROCESSING PIPELINE\n` +
-      `Uploaded → Validated → Preprocessed → ` +
-      `Future-Risk Prediction → Risk Classification → ` +
-      `Alert Generation → Report\n\n` +
-      `6. INTEGRITY\n` +
-      `SHA-256 is used to verify the integrity of uploaded CDM datasets.\n\n` +
-      `7. SYSTEM\n` +
-      `ASTRA satellite conjunction early-warning system.\n` +
-      `Prediction engine: CatBoostRegressor.\n`;
+      `MODEL PERFORMANCE\n` +
+      `R²: ${MODEL_METRICS.r2}\n` +
+      `MAE: ${MODEL_METRICS.mae}\n` +
+      `RMSE: ${MODEL_METRICS.rmse}\n` +
+      `High-Risk Recall: ${MODEL_METRICS.highRiskRecall}\n` +
+      `Weighted F1: ${MODEL_METRICS.weightedF1}\n\n` +
+      predictionSection +
+      `OVERALL EVALUATED RISK DISTRIBUTION\n` +
+      `Low: ${RISK_DISTRIBUTION.low}\n` +
+      `Medium: ${RISK_DISTRIBUTION.medium}\n` +
+      `High: ${RISK_DISTRIBUTION.high}`;
 
-    const newReport = reportService.addReport(
-      title,
-      "PDF",
-      summary
-    );
+    const newReport =
+      reportService.addReport(
+        title,
+        "PDF",
+        summary
+      );
 
-    setReports(reportService.getReports());
+    setReports(getRelevantReports());
+
     setActiveReport(newReport);
+
+    setLatestPrediction(
+      getLatestPrediction()
+    );
   };
 
-  const createPDF = (report, currentUser) => {
+  /*
+   * ------------------------------------------------------------
+   * CREATE ONE-PAGE PDF
+   * ------------------------------------------------------------
+   */
+
+  const createPDF = (
+    report,
+    currentUser
+  ) => {
+    const prediction =
+      getLatestPrediction();
+
+    const risk =
+      getRiskLabel(prediction);
+
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
       format: "a4",
     });
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
+    const pageWidth =
+      doc.internal.pageSize.getWidth();
+
+    const pageHeight =
+      doc.internal.pageSize.getHeight();
 
     const margin = 18;
-    const textWidth = pageWidth - margin * 2;
 
-    let y = 20;
+    const contentWidth =
+      pageWidth - margin * 2;
 
-    doc.setFont("helvetica", "bold");
+    let y = 18;
+
+    /*
+     * ----------------------------------------------------------
+     * HEADER
+     * ----------------------------------------------------------
+     */
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
     doc.setFontSize(20);
-    doc.text("ASTRA", margin, y);
 
-    y += 8;
+    doc.setTextColor(
+      30,
+      90,
+      180
+    );
 
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "normal");
+    doc.text(
+      "ASTRA",
+      margin,
+      y
+    );
+
+    y += 7;
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(12);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
+
     doc.text(
       "Conjunction Risk Report",
       margin,
       y
     );
 
-    y += 10;
+    y += 8;
 
-    doc.setDrawColor(60, 130, 230);
+    doc.setDrawColor(
+      60,
+      130,
+      230
+    );
+
     doc.line(
       margin,
       y,
@@ -143,16 +433,41 @@ export default function Reports() {
       y
     );
 
-    y += 10;
+    y += 8;
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("REPORT INFORMATION", margin, y);
+    /*
+     * ----------------------------------------------------------
+     * REPORT INFORMATION
+     * ----------------------------------------------------------
+     */
 
-    y += 7;
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
 
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
+
+    doc.text(
+      "REPORT INFORMATION",
+      margin,
+      y
+    );
+
+    y += 5;
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8.5);
 
     doc.text(
       `Report ID: ${report.id}`,
@@ -160,7 +475,7 @@ export default function Reports() {
       y
     );
 
-    y += 5;
+    y += 4.5;
 
     doc.text(
       `Title: ${report.title}`,
@@ -168,7 +483,7 @@ export default function Reports() {
       y
     );
 
-    y += 5;
+    y += 4.5;
 
     doc.text(
       `Generated: ${report.date}`,
@@ -176,7 +491,7 @@ export default function Reports() {
       y
     );
 
-    y += 5;
+    y += 4.5;
 
     doc.text(
       `Generated By: ${currentUser}`,
@@ -184,25 +499,254 @@ export default function Reports() {
       y
     );
 
-    y += 10;
+    y += 8;
 
-    doc.setFillColor(245, 248, 252);
-    doc.setDrawColor(210, 220, 235);
+    /*
+     * ----------------------------------------------------------
+     * UPLOADED CDM PREDICTION
+     * ----------------------------------------------------------
+     */
+
+    const predictionBoxHeight =
+      prediction ? 55 : 38;
+
+    doc.setFillColor(
+      242,
+      247,
+      253
+    );
+
+    doc.setDrawColor(
+      60,
+      130,
+      230
+    );
 
     doc.roundedRect(
       margin,
       y,
-      textWidth,
-      36,
+      contentWidth,
+      predictionBoxHeight,
+      3,
+      3,
+      "FD"
+    );
+
+    const boxStartY = y;
+
+    y += 7;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(10);
+
+    doc.setTextColor(
+      30,
+      70,
+      130
+    );
+
+    doc.text(
+      "UPLOADED CDM PREDICTION",
+      margin + 5,
+      y
+    );
+
+    y += 6;
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8.5);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
+
+    if (prediction) {
+      doc.text(
+        `Dataset: ${prediction.fileName}`,
+        margin + 5,
+        y
+      );
+
+      y += 4.5;
+
+      doc.text(
+        "Prediction Horizon: +1 CDM",
+        margin + 5,
+        y
+      );
+
+      y += 6;
+
+      /*
+       * Risk label and value are deliberately
+       * placed on separate lines.
+       */
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(8.5);
+
+      doc.setTextColor(
+        30,
+        30,
+        30
+      );
+
+      doc.text(
+        "RISK CLASSIFICATION",
+        margin + 5,
+        y
+      );
+
+      y += 5;
+
+      doc.setFontSize(12);
+
+      getRiskColor(
+        doc,
+        risk
+      );
+
+      doc.text(
+        risk,
+        margin + 5,
+        y
+      );
+
+      y += 7;
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(8.5);
+
+      doc.setTextColor(
+        30,
+        30,
+        30
+      );
+
+      doc.text(
+        `Risk Score: ${formatRiskScore(
+          prediction.riskScore
+        )}`,
+        margin + 5,
+        y
+      );
+
+      y += 4.5;
+
+      doc.text(
+        `log10(Pc): ${
+          prediction.log10Probability ??
+          "N/A"
+        }`,
+        margin + 5,
+        y
+      );
+
+      y += 4.5;
+
+      doc.text(
+        `Collision Probability: ${formatProbability(
+          prediction.probability
+        )}`,
+        margin + 5,
+        y
+      );
+
+      y += 4.5;
+
+      doc.text(
+        `Alert Triggered: ${
+          prediction.isAlert
+            ? "YES"
+            : "NO"
+        }`,
+        margin + 5,
+        y
+      );
+    } else {
+      doc.setTextColor(
+        90,
+        90,
+        90
+      );
+
+      doc.text(
+        "No uploaded CDM prediction is currently available.",
+        margin + 5,
+        y
+      );
+    }
+
+    /*
+     * Make sure the next section begins
+     * below the actual prediction box.
+     */
+
+    y =
+      boxStartY +
+      predictionBoxHeight +
+      8;
+
+    /*
+     * ----------------------------------------------------------
+     * MODEL SUMMARY
+     * ----------------------------------------------------------
+     */
+
+    doc.setFillColor(
+      245,
+      248,
+      252
+    );
+
+    doc.setDrawColor(
+      210,
+      220,
+      235
+    );
+
+    doc.roundedRect(
+      margin,
+      y,
+      contentWidth,
+      30,
       2,
       2,
       "FD"
     );
 
-    y += 8;
+    y += 7;
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(9);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
 
     doc.text(
       "MODEL SUMMARY",
@@ -210,10 +754,14 @@ export default function Reports() {
       y
     );
 
-    y += 6;
+    y += 5.5;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8.5);
 
     doc.text(
       "Model: CatBoostRegressor",
@@ -221,7 +769,7 @@ export default function Reports() {
       y
     );
 
-    y += 5;
+    y += 4.5;
 
     doc.text(
       "Prediction Horizon: +1 CDM",
@@ -229,7 +777,7 @@ export default function Reports() {
       y
     );
 
-    y += 5;
+    y += 4.5;
 
     doc.text(
       "Target: Future Numerical Risk",
@@ -237,7 +785,7 @@ export default function Reports() {
       y
     );
 
-    y += 5;
+    y += 4.5;
 
     doc.text(
       "Classification: Low / Medium / High",
@@ -245,169 +793,324 @@ export default function Reports() {
       y
     );
 
-    y += 12;
+    y += 8;
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    /*
+     * ----------------------------------------------------------
+     * TWO-COLUMN LOWER SECTION
+     * ----------------------------------------------------------
+     */
+
+    const columnGap = 8;
+
+    const columnWidth =
+      (contentWidth - columnGap) /
+      2;
+
+    const leftX = margin;
+
+    const rightX =
+      margin +
+      columnWidth +
+      columnGap;
+
+    /*
+     * LEFT: MODEL PERFORMANCE
+     */
+
+    doc.setFillColor(
+      248,
+      250,
+      253
+    );
+
+    doc.setDrawColor(
+      220,
+      225,
+      235
+    );
+
+    doc.roundedRect(
+      leftX,
+      y,
+      columnWidth,
+      47,
+      2,
+      2,
+      "FD"
+    );
+
+    let leftY = y + 7;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(9);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
 
     doc.text(
       "MODEL PERFORMANCE",
-      margin,
-      y
+      leftX + 5,
+      leftY
     );
 
-    y += 7;
+    leftY += 7;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8.5);
 
     const metrics = [
-      "R²: 76.6%",
-      "MAE: 3.20",
-      "RMSE: 4.78",
-      "High-Risk Recall: 77.96%",
-      "Weighted F1: 86.06%",
+      `R²: ${MODEL_METRICS.r2}`,
+      `MAE: ${MODEL_METRICS.mae}`,
+      `RMSE: ${MODEL_METRICS.rmse}`,
+      `High-Risk Recall: ${MODEL_METRICS.highRiskRecall}`,
+      `Weighted F1: ${MODEL_METRICS.weightedF1}`,
     ];
 
-    metrics.forEach((metric) => {
-      doc.text(`• ${metric}`, margin + 3, y);
-      y += 5;
-    });
+    metrics.forEach(
+      (metric) => {
+        doc.text(
+          metric,
+          leftX + 5,
+          leftY
+        );
 
-    y += 5;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-
-    doc.text(
-      "RISK CLASSIFICATION",
-      margin,
-      y
-    );
-
-    y += 7;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-
-    doc.text(
-      "Low Risk: 50.56%",
-      margin + 3,
-      y
-    );
-
-    y += 5;
-
-    doc.text(
-      "Medium Risk: 17.17%",
-      margin + 3,
-      y
-    );
-
-    y += 5;
-
-    doc.text(
-      "High Risk: 32.27%",
-      margin + 3,
-      y
-    );
-
-    y += 10;
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-
-    doc.text(
-      "REPORT SUMMARY",
-      margin,
-      y
-    );
-
-    y += 7;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-
-    const summaryText =
-      report.summary ||
-      "Conjunction screening and future-risk prediction report.";
-
-    const lines = doc.splitTextToSize(
-      summaryText,
-      textWidth
-    );
-
-    lines.forEach((line) => {
-      if (y > pageHeight - 25) {
-        doc.addPage();
-        y = 20;
+        leftY += 6;
       }
+    );
 
-      doc.text(line, margin, y);
-      y += 4.5;
-    });
+    /*
+     * RIGHT: RISK DISTRIBUTION
+     */
+
+    doc.roundedRect(
+      rightX,
+      y,
+      columnWidth,
+      47,
+      2,
+      2,
+      "FD"
+    );
+
+    let rightY = y + 7;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(9);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
+
+    doc.text(
+      "EVALUATED RISK DISTRIBUTION",
+      rightX + 5,
+      rightY
+    );
+
+    rightY += 8;
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8.5);
+
+    doc.text(
+      `Low Risk: ${RISK_DISTRIBUTION.low}`,
+      rightX + 5,
+      rightY
+    );
+
+    rightY += 7;
+
+    doc.text(
+      `Medium Risk: ${RISK_DISTRIBUTION.medium}`,
+      rightX + 5,
+      rightY
+    );
+
+    rightY += 7;
+
+    doc.text(
+      `High Risk: ${RISK_DISTRIBUTION.high}`,
+      rightX + 5,
+      rightY
+    );
+
+    /*
+     * ----------------------------------------------------------
+     * REPORT RESULT / ACTION
+     * ----------------------------------------------------------
+     */
+
+    y += 55;
+
+    doc.setFillColor(
+      242,
+      247,
+      253
+    );
+
+    doc.setDrawColor(
+      60,
+      130,
+      230
+    );
+
+    doc.roundedRect(
+      margin,
+      y,
+      contentWidth,
+      32,
+      2,
+      2,
+      "FD"
+    );
 
     y += 7;
 
-    if (y > pageHeight - 35) {
-      doc.addPage();
-      y = 20;
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(9);
+
+    doc.setTextColor(
+      30,
+      70,
+      130
+    );
+
+    doc.text(
+      "ASSESSMENT RESULT",
+      margin + 5,
+      y
+    );
+
+    y += 7;
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8.5);
+
+    doc.setTextColor(
+      30,
+      30,
+      30
+    );
+
+    if (prediction) {
+      const assessmentText =
+        risk === "HIGH"
+          ? "High-risk conjunction detected. Review the uploaded CDM assessment and associated orbital data."
+          : risk === "MEDIUM"
+          ? "Medium-risk conjunction detected. Further monitoring and review are recommended."
+          : "Low-risk conjunction detected based on the current uploaded CDM assessment.";
+
+      const wrapped =
+        doc.splitTextToSize(
+          assessmentText,
+          contentWidth - 10
+        );
+
+      doc.text(
+        wrapped,
+        margin + 5,
+        y
+      );
+    } else {
+      doc.text(
+        "Upload a CDM dataset and run the live CatBoost prediction to generate an assessment.",
+        margin + 5,
+        y
+      );
     }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    /*
+     * ----------------------------------------------------------
+     * FOOTER
+     * ----------------------------------------------------------
+     */
 
-    doc.text(
-      "DATA INTEGRITY",
-      margin,
-      y
+    doc.setFont(
+      "helvetica",
+      "normal"
     );
 
-    y += 7;
+    doc.setFontSize(7.5);
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-
-    const integrityText =
-      "SHA-256 dataset integrity verification is supported for uploaded CDM datasets.";
-
-    const integrityLines = doc.splitTextToSize(
-      integrityText,
-      textWidth
+    doc.setTextColor(
+      100,
+      100,
+      100
     );
 
-    integrityLines.forEach((line) => {
-      doc.text(line, margin, y);
-      y += 4.5;
-    });
-
-    y += 8;
-
-    const footerText =
-      "ASTRA • Satellite Conjunction Early-Warning System";
-
-    doc.setFontSize(8);
-    doc.setTextColor(100, 100, 100);
-
     doc.text(
-      footerText,
+      "ASTRA • Satellite Conjunction Early-Warning System",
       margin,
       pageHeight - 10
     );
 
     doc.text(
-      `Page ${doc.getNumberOfPages()}`,
-      pageWidth - margin - 15,
+      "Page 1",
+      pageWidth -
+        margin -
+        12,
       pageHeight - 10
     );
+
+    /*
+     * IMPORTANT:
+     * There is intentionally no addPage()
+     * anywhere in this PDF generator.
+     * The report is always one page.
+     */
 
     return doc;
   };
 
-  const handleDownload = (report, format) => {
+  /*
+   * ------------------------------------------------------------
+   * DOWNLOAD TXT / PDF
+   * ------------------------------------------------------------
+   */
+
+  const handleDownload = (
+    report,
+    format
+  ) => {
     const currentUser =
-      authService.getCurrentUser()?.name ||
-      "Astra User";
+      authService.getCurrentUser()
+        ?.name || "Astra User";
+
+    const prediction =
+      getLatestPrediction();
+
+    const risk =
+      getRiskLabel(prediction);
 
     if (format === "PDF") {
       const doc = createPDF(
@@ -419,7 +1122,10 @@ export default function Reports() {
         `${report.id.toLowerCase()}_` +
         `${report.title
           .toLowerCase()
-          .replace(/[^a-z0-9]/g, "_")}` +
+          .replace(
+            /[^a-z0-9]/g,
+            "_"
+          )}` +
         `.pdf`;
 
       doc.save(filename);
@@ -437,23 +1143,51 @@ export default function Reports() {
       `Format: TXT\n` +
       `Generated By: ${currentUser}\n\n` +
       `-----------------------------------------------------------\n` +
-      `REPORT SUMMARY\n` +
+      `UPLOADED CDM PREDICTION\n` +
       `-----------------------------------------------------------\n\n` +
       `${
-        report.summary ||
-        "Conjunction screening and future-risk prediction report."
+        prediction
+          ? `Dataset: ${prediction.fileName}\n` +
+            `Risk Classification: ${risk}\n` +
+            `Risk Score: ${formatRiskScore(
+              prediction.riskScore
+            )}\n` +
+            `log10(Pc): ${
+              prediction.log10Probability ??
+              "N/A"
+            }\n` +
+            `Collision Probability: ${formatProbability(
+              prediction.probability
+            )}\n` +
+            `Prediction Horizon: +1 CDM\n` +
+            `Alert Triggered: ${
+              prediction.isAlert
+                ? "YES"
+                : "NO"
+            }\n`
+          : "No uploaded CDM prediction is currently available.\n"
       }\n\n` +
-      `-----------------------------------------------------------\n` +
-      `DATA INTEGRITY\n` +
-      `-----------------------------------------------------------\n\n` +
-      `SHA-256 dataset integrity verification is supported\n` +
-      `for uploaded CDM datasets.\n\n` +
       `-----------------------------------------------------------\n` +
       `MODEL\n` +
       `-----------------------------------------------------------\n\n` +
-      `CatBoostRegressor\n` +
+      `Model: CatBoostRegressor\n` +
       `Prediction Horizon: +1 CDM\n` +
-      `Future Risk Classification: Low / Medium / High\n\n` +
+      `Target: Future Numerical Risk\n` +
+      `Classification: Low / Medium / High\n\n` +
+      `-----------------------------------------------------------\n` +
+      `MODEL PERFORMANCE\n` +
+      `-----------------------------------------------------------\n\n` +
+      `R²: ${MODEL_METRICS.r2}\n` +
+      `MAE: ${MODEL_METRICS.mae}\n` +
+      `RMSE: ${MODEL_METRICS.rmse}\n` +
+      `High-Risk Recall: ${MODEL_METRICS.highRiskRecall}\n` +
+      `Weighted F1: ${MODEL_METRICS.weightedF1}\n\n` +
+      `-----------------------------------------------------------\n` +
+      `OVERALL EVALUATED RISK DISTRIBUTION\n` +
+      `-----------------------------------------------------------\n\n` +
+      `Low Risk: ${RISK_DISTRIBUTION.low}\n` +
+      `Medium Risk: ${RISK_DISTRIBUTION.medium}\n` +
+      `High Risk: ${RISK_DISTRIBUTION.high}\n\n` +
       `===========================================================\n` +
       `END OF ASTRA CONJUNCTION RISK REPORT\n` +
       `===========================================================`;
@@ -462,7 +1196,10 @@ export default function Reports() {
       `${report.id.toLowerCase()}_` +
       `${report.title
         .toLowerCase()
-        .replace(/[^a-z0-9]/g, "_")}` +
+        .replace(
+          /[^a-z0-9]/g,
+          "_"
+        )}` +
       `.txt`;
 
     reportService.downloadFile(
@@ -474,14 +1211,18 @@ export default function Reports() {
 
   return (
     <div>
-      {/* -------------------- PAGE HEADER -------------------- */}
+      {/* ------------------------------------------------------ */}
+      {/* PAGE HEADER                                            */}
+      {/* ------------------------------------------------------ */}
+
       <div className="page-head">
         <div>
           <h1>Conjunction Reports</h1>
 
           <p>
-            Generate, review, download and archive
-            Astra CDM screening and future-risk reports.
+            Generate, review and download
+            ASTRA CDM risk assessment
+            reports.
           </p>
         </div>
 
@@ -490,27 +1231,41 @@ export default function Reports() {
           style={{
             display: "flex",
             gap: "10px",
+            flexWrap: "wrap",
           }}
         >
           <button
             className="btn ghost light-theme-action"
-            onClick={handleGenerateBrief}
+            onClick={
+              handleGenerateBrief
+            }
           >
-            <Icon name="file" size={14} />
+            <Icon
+              name="file"
+              size={14}
+            />
             Generate Brief
           </button>
 
           <button
             className="btn primary light-theme-primary-action"
-            onClick={handleGenerateReport}
+            onClick={
+              handleGenerateReport
+            }
           >
-            <Icon name="plus" size={14} />
+            <Icon
+              name="plus"
+              size={14}
+            />
             Generate Risk Report
           </button>
         </div>
       </div>
 
-      {/* -------------------- REPORT GENERATORS -------------------- */}
+      {/* ------------------------------------------------------ */}
+      {/* REPORT GENERATORS                                      */}
+      {/* ------------------------------------------------------ */}
+
       <div
         className="grid cols-2"
         style={{
@@ -519,10 +1274,13 @@ export default function Reports() {
       >
         <div className="card hud-card">
           <div className="card-head">
-            <h3>Conjunction Screening Brief</h3>
+            <h3>
+              Conjunction Screening
+              Brief
+            </h3>
 
             <span className="chip info">
-              TXT FORMAT
+              TXT
             </span>
           </div>
 
@@ -533,10 +1291,11 @@ export default function Reports() {
               lineHeight: "1.6",
             }}
           >
-            Generates a concise summary of CDM
-            datasets, CatBoost prediction performance,
-            future-risk classification and screening
-            workflow.
+            Generates a concise report
+            containing the actual
+            uploaded CDM prediction,
+            risk classification and
+            model information.
           </p>
 
           <button
@@ -545,7 +1304,9 @@ export default function Reports() {
               marginTop: 16,
               width: "100%",
             }}
-            onClick={handleGenerateBrief}
+            onClick={
+              handleGenerateBrief
+            }
           >
             Generate Screening Brief
           </button>
@@ -553,10 +1314,13 @@ export default function Reports() {
 
         <div className="card hud-card">
           <div className="card-head">
-            <h3>Comprehensive Risk Report</h3>
+            <h3>
+              Comprehensive Risk
+              Report
+            </h3>
 
             <span className="chip success">
-              PDF FORMAT
+              PDF
             </span>
           </div>
 
@@ -567,10 +1331,11 @@ export default function Reports() {
               lineHeight: "1.6",
             }}
           >
-            Generates a detailed report containing
-            dataset information, model performance,
-            future-risk classification and the Astra
-            processing pipeline.
+            Generates a one-page PDF
+            containing the actual
+            uploaded CDM risk result,
+            model performance and
+            assessment summary.
           </p>
 
           <button
@@ -579,20 +1344,187 @@ export default function Reports() {
               marginTop: 16,
               width: "100%",
             }}
-            onClick={handleGenerateReport}
+            onClick={
+              handleGenerateReport
+            }
           >
-            Generate Comprehensive Risk Report
+            Generate Risk Report
           </button>
         </div>
       </div>
 
-      {/* -------------------- ACTIVE REPORT -------------------- */}
+      {/* ------------------------------------------------------ */}
+      {/* LATEST PREDICTION                                     */}
+      {/* ------------------------------------------------------ */}
+
+      <div
+        className="card hud-card"
+        style={{
+          marginBottom: 20,
+          borderColor:
+            latestPrediction
+              ? "var(--accent)"
+              : "var(--border)",
+        }}
+      >
+        <div className="card-head">
+          <h3>
+            <Icon
+              name="activity"
+              size={16}
+            />{" "}
+            Uploaded CDM Prediction
+          </h3>
+
+          <span
+            className={`chip ${
+              latestPrediction
+                ? getRiskLabel(
+                    latestPrediction
+                  ).toLowerCase()
+                : "info"
+            }`}
+          >
+            {latestPrediction
+              ? getRiskLabel(
+                  latestPrediction
+                )
+              : "NO PREDICTION"}
+          </span>
+        </div>
+
+        {latestPrediction ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(4, minmax(0, 1fr))",
+              gap: 16,
+            }}
+          >
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div className="k-label">
+                DATASET
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  overflowWrap:
+                    "anywhere",
+                }}
+              >
+                {
+                  latestPrediction.fileName
+                }
+              </div>
+            </div>
+
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div className="k-label">
+                RISK CLASSIFICATION
+              </div>
+
+              <div
+                style={{
+                  marginTop: 5,
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                {getRiskLabel(
+                  latestPrediction
+                )}
+              </div>
+            </div>
+
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div className="k-label">
+                LOG10(Pc)
+              </div>
+
+              <div
+                className="mono"
+                style={{
+                  marginTop: 5,
+                  fontSize: 12,
+                  overflowWrap:
+                    "anywhere",
+                }}
+              >
+                {
+                  latestPrediction.log10Probability
+                }
+              </div>
+            </div>
+
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div className="k-label">
+                COLLISION PROBABILITY
+              </div>
+
+              <div
+                className="mono"
+                style={{
+                  marginTop: 5,
+                  fontSize: 12,
+                  overflowWrap:
+                    "anywhere",
+                }}
+              >
+                {formatProbability(
+                  latestPrediction.probability
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p
+            style={{
+              color:
+                "var(--text-muted)",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            No uploaded CDM prediction
+            is currently available.
+            Upload a CSV/XLSX CDM dataset
+            and run the live CatBoost
+            model first.
+          </p>
+        )}
+      </div>
+
+      {/* ------------------------------------------------------ */}
+      {/* ACTIVE REPORT PREVIEW                                  */}
+      {/* ------------------------------------------------------ */}
+
       {activeReport && (
         <div
           className="card hud-card"
           style={{
             marginBottom: 20,
-            border: "1px solid var(--accent)",
+            border:
+              "1px solid var(--accent)",
           }}
         >
           <div className="card-head">
@@ -606,7 +1538,17 @@ export default function Reports() {
             </span>
           </div>
 
-          <pre className="light-theme-code-panel">
+          <pre
+            className="light-theme-code-panel"
+            style={{
+              whiteSpace: "pre-wrap",
+              overflowWrap:
+                "anywhere",
+              wordBreak: "break-word",
+              maxHeight: 420,
+              overflowY: "auto",
+            }}
+          >
             {activeReport.summary}
           </pre>
 
@@ -615,6 +1557,7 @@ export default function Reports() {
               display: "flex",
               gap: "10px",
               marginTop: "14px",
+              flexWrap: "wrap",
             }}
           >
             <button
@@ -652,10 +1595,15 @@ export default function Reports() {
         </div>
       )}
 
-      {/* -------------------- REPORT ARCHIVE -------------------- */}
+      {/* ------------------------------------------------------ */}
+      {/* SAVED REPORTS                                          */}
+      {/* ------------------------------------------------------ */}
+
       <div className="card hud-card">
         <div className="card-head">
-          <h3>Saved Conjunction Reports</h3>
+          <h3>
+            Saved Conjunction Reports
+          </h3>
 
           <span className="chip">
             {reports.length} REPORTS
@@ -669,7 +1617,6 @@ export default function Reports() {
                 <th>Report ID</th>
                 <th>Report Title</th>
                 <th>Date Generated</th>
-                <th>File Size</th>
                 <th>Format</th>
                 <th>Actions</th>
               </tr>
@@ -679,116 +1626,130 @@ export default function Reports() {
               {reports.length === 0 ? (
                 <tr>
                   <td
-                    colSpan="6"
+                    colSpan="5"
                     style={{
-                      textAlign: "center",
+                      textAlign:
+                        "center",
                       padding: "30px",
                       color:
                         "var(--text-muted)",
                     }}
                   >
-                    No reports generated yet.
+                    No ASTRA reports
+                    generated yet.
                   </td>
                 </tr>
               ) : (
-                reports.map((report) => (
-                  <tr key={report.id}>
-                    <td
-                      className="mono"
-                      style={{
-                        fontWeight: 700,
-                        color:
-                          "var(--accent)",
-                      }}
+                reports.map(
+                  (report) => (
+                    <tr
+                      key={report.id}
                     >
-                      {report.id}
-                    </td>
-
-                    <td>
-                      <b>{report.title}</b>
-                    </td>
-
-                    <td className="mono">
-                      {report.date}
-                    </td>
-
-                    <td className="mono">
-                      {report.size}
-                    </td>
-
-                    <td>
-                      <span className="chip info">
-                        {report.format}
-                      </span>
-                    </td>
-
-                    <td>
-                      <div
+                      <td
+                        className="mono"
                         style={{
-                          display: "flex",
-                          gap: "6px",
+                          fontWeight: 700,
+                          color:
+                            "var(--accent)",
                         }}
                       >
-                        <button
-                          className="btn ghost light-theme-action"
-                          style={{
-                            padding:
-                              "4px 8px",
-                            fontSize: 11,
-                          }}
-                          onClick={() => {
-                            setActiveReport(
-                              report
-                            );
-                          }}
-                        >
-                          View
-                        </button>
+                        {report.id}
+                      </td>
 
-                        <button
-                          className="btn ghost light-theme-action"
-                          style={{
-                            padding:
-                              "4px 8px",
-                            fontSize: 11,
-                          }}
-                          onClick={() =>
-                            handleDownload(
-                              report,
-                              "TXT"
-                            )
+                      <td>
+                        <b>
+                          {
+                            report.title
                           }
-                        >
-                          Download TXT
-                        </button>
+                        </b>
+                      </td>
 
-                        <button
-                          className="btn primary light-theme-primary-action"
-                          style={{
-                            padding:
-                              "4px 8px",
-                            fontSize: 11,
-                          }}
-                          onClick={() =>
-                            handleDownload(
-                              report,
-                              "PDF"
-                            )
+                      <td className="mono">
+                        {report.date}
+                      </td>
+
+                      <td>
+                        <span className="chip info">
+                          {
+                            report.format
                           }
+                        </span>
+                      </td>
+
+                      <td>
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            gap: "6px",
+                            flexWrap:
+                              "wrap",
+                          }}
                         >
-                          Download PDF
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <button
+                            className="btn ghost light-theme-action"
+                            style={{
+                              padding:
+                                "5px 9px",
+                              fontSize: 11,
+                            }}
+                            onClick={() =>
+                              setActiveReport(
+                                report
+                              )
+                            }
+                          >
+                            View
+                          </button>
+
+                          <button
+                            className="btn ghost light-theme-action"
+                            style={{
+                              padding:
+                                "5px 9px",
+                              fontSize: 11,
+                            }}
+                            onClick={() =>
+                              handleDownload(
+                                report,
+                                "TXT"
+                              )
+                            }
+                          >
+                            TXT
+                          </button>
+
+                          <button
+                            className="btn primary light-theme-primary-action"
+                            style={{
+                              padding:
+                                "5px 9px",
+                              fontSize: 11,
+                            }}
+                            onClick={() =>
+                              handleDownload(
+                                report,
+                                "PDF"
+                              )
+                            }
+                          >
+                            PDF
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* -------------------- REPORT PIPELINE -------------------- */}
+      {/* ------------------------------------------------------ */}
+      {/* REPORT PIPELINE                                        */}
+      {/* ------------------------------------------------------ */}
+
       <div
         className="card hud-card"
         style={{
@@ -815,7 +1776,7 @@ export default function Reports() {
           style={{
             display: "grid",
             gridTemplateColumns:
-              "repeat(5, 1fr)",
+              "repeat(5, minmax(0, 1fr))",
             gap: 12,
           }}
         >
@@ -825,26 +1786,33 @@ export default function Reports() {
             "CatBoost Prediction",
             "Risk Classification",
             "Report",
-          ].map((step, index) => (
-            <div
-              key={step}
-              className="light-theme-panel"
-            >
-              <div className="k-label">
-                0{index + 1}
-              </div>
-
+          ].map(
+            (step, index) => (
               <div
+                key={step}
+                className="light-theme-panel"
                 style={{
-                  marginTop: 5,
-                  fontSize: 12,
-                  fontWeight: 600,
+                  minWidth: 0,
                 }}
               >
-                {step}
+                <div className="k-label">
+                  0{index + 1}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    overflowWrap:
+                      "anywhere",
+                  }}
+                >
+                  {step}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          )}
         </div>
       </div>
     </div>

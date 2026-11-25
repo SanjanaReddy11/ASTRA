@@ -1,23 +1,34 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+
 import Icon from "./Icon.jsx";
 import { authService } from "../services/store.js";
+
+/* =========================================================
+   PAGE BREADCRUMBS
+========================================================= */
 
 const CRUMBS = {
   "/": "Home",
   "/dashboard": "Mission Control Dashboard",
   "/mission": "Mission Overview",
   "/upload": "Data Intake Center",
-  "/predictions": "Future Risk Predictions",
-  "/analytics": "Conjunction Analytics",
   "/timeline": "CDM Processing Timeline",
   "/alerts": "Conjunction Alerts",
   "/reports": "Conjunction Reports",
+  "/explainability": "SHAP Explainability",
   "/history": "Activity & Audit History",
   "/settings": "Settings",
   "/admin": "System Monitoring",
   "/help": "Help",
 };
+
+/* =========================================================
+   LOCAL TIME
+========================================================= */
 
 function useLocalTime() {
   const [now, setNow] = useState(new Date());
@@ -32,6 +43,10 @@ function useLocalTime() {
 
   return now;
 }
+
+/* =========================================================
+   TIME FORMATTING
+========================================================= */
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -52,13 +67,17 @@ function formatLocalDate(date) {
   }).format(date);
 }
 
+/* =========================================================
+   HEADER COMPONENT
+========================================================= */
+
 export default function Header({
   onMobileMenu,
   onOpenCmd,
   missionMode,
   onToggleMissionMode,
 }) {
-  const loc = useLocation();
+  const location = useLocation();
   const navigate = useNavigate();
 
   const now = useLocalTime();
@@ -66,24 +85,24 @@ export default function Header({
   const localTime = formatLocalTime(now);
   const localDate = formatLocalDate(now);
 
-  const crumb = CRUMBS[loc.pathname] || "ASTRA";
+  const crumb =
+    CRUMBS[location.pathname] || "ASTRA";
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const currentUser = authService.getCurrentUser() || {
-    username: "user",
-    name: "Astra User",
-    role: "user",
-  };
+  const currentUser =
+    authService.getCurrentUser() || {
+      username: "user",
+      name: "Astra User",
+      role: "user",
+    };
 
   const userInitials =
     currentUser.username === "admin"
       ? "AD"
       : currentUser.username
-        ? currentUser.username
-            .slice(0, 2)
-            .toUpperCase()
+        ? currentUser.username.slice(0, 2).toUpperCase()
         : "AS";
 
   const handleLogout = () => {
@@ -93,24 +112,28 @@ export default function Header({
 
   return (
     <header className="header" role="banner">
-      {/* -------------------- MOBILE MENU -------------------- */}
+
+      {/* MOBILE MENU */}
+
       <button
         className="icon-btn"
         aria-label="Open menu"
         onClick={onMobileMenu}
         style={{ display: "none" }}
       >
-        <Icon name="menu" />
+        <Icon name="menu" size={18} />
       </button>
 
-      {/* -------------------- BREADCRUMB -------------------- */}
+      {/* BREADCRUMB */}
+
       <div className="breadcrumb">
         <b>ASTRA</b>
         <span className="sep">/</span>
         <span>{crumb}</span>
       </div>
 
-      {/* -------------------- SEARCH -------------------- */}
+      {/* SEARCH */}
+
       <div
         className="header-search"
         role="search"
@@ -127,15 +150,18 @@ export default function Header({
         <span className="kbd">⌘K</span>
       </div>
 
-      {/* -------------------- HEADER RIGHT -------------------- */}
+      {/* RIGHT SIDE */}
+
       <div className="header-right">
-        {/* Mission Mode */}
+
+        {/* MISSION MODE */}
+
         <button
           className={`btn ghost ${
             missionMode ? "primary" : ""
           }`}
           onClick={onToggleMissionMode}
-          title="Toggle Fullscreen Mission Mode"
+          title="Toggle Mission Mode"
           style={{
             fontSize: "11px",
             padding: "4px 10px",
@@ -148,35 +174,37 @@ export default function Header({
             : "Mission Mode"}
         </button>
 
-        {/* Dataset Integrity */}
-        <span
-          className="status-chip"
-          title="CDM dataset integrity monitoring"
-        >
-          <span className="pulse-dot" />
-          Data Integrity
-        </span>
+        {/* DATA STATUS */}
 
-        {/* SHA-256 */}
-        <span
-          className="status-chip"
-          title="SHA-256 dataset integrity verification"
-        >
-          <span className="pulse-dot" />
-          SHA-256 Verified
-        </span>
-
-        {/* -------------------- LOCAL CLOCK -------------------- */}
-        <div
-          className="clock"
-          aria-live="polite"
-          title="Local system time"
-        >
-          <b>{localTime}</b>
-          <span>{localDate}</span>
+        <div className="status-pill">
+          <span className="status-dot" />
+          <span>Data Integrity</span>
         </div>
 
-        {/* -------------------- NOTIFICATIONS -------------------- */}
+        {/* HASH STATUS */}
+
+        <div className="status-pill">
+          <span className="status-dot" />
+          <span>SHA-256 Verified</span>
+        </div>
+
+        {/* CLOCK */}
+
+        <div
+          className="header-clock"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            minWidth: "80px",
+          }}
+        >
+          <b className="mono">{localTime}</b>
+          <small>{localDate}</small>
+        </div>
+
+        {/* NOTIFICATIONS */}
+
         <div style={{ position: "relative" }}>
           <button
             className="icon-btn"
@@ -190,122 +218,31 @@ export default function Header({
           </button>
 
           {notifOpen && (
-            <div className="notification-menu">
-              <div
+            <div
+              className="notification-menu"
+              style={{
+                right: 0,
+                width: "260px",
+                padding: "14px",
+              }}
+            >
+              <b>System Status</b>
+
+              <p
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: "12px",
-                  borderBottom: "1px solid var(--border)",
-                  paddingBottom: "8px",
+                  fontSize: "11px",
+                  color: "var(--text-muted)",
+                  marginTop: "8px",
                 }}
               >
-                <b
-                  style={{
-                    fontSize: "13px",
-                  }}
-                >
-                  Screening Updates
-                </b>
-
-                <span
-                  className="chip"
-                  style={{
-                    fontSize: "10px",
-                  }}
-                >
-                  UPDATES
-                </span>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "10px",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "12px",
-                    borderBottom: "1px solid var(--border)",
-                    paddingBottom: "8px",
-                  }}
-                >
-                  <b
-                    style={{
-                      color: "var(--accent)",
-                    }}
-                  >
-                    CDM SCREENING
-                  </b>
-
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      marginTop: "3px",
-                    }}
-                  >
-                    Conjunction dataset processing is
-                    available from the Data Intake page.
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "12px",
-                    borderBottom: "1px solid var(--border)",
-                    paddingBottom: "8px",
-                  }}
-                >
-                  <b
-                    style={{
-                      color: "var(--success)",
-                    }}
-                  >
-                    MODEL READY
-                  </b>
-
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      marginTop: "3px",
-                    }}
-                  >
-                    CatBoost future-risk prediction
-                    pipeline is available.
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "12px",
-                  }}
-                >
-                  <b
-                    style={{
-                      color: "var(--warning)",
-                    }}
-                  >
-                    REPORTING
-                  </b>
-
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      marginTop: "3px",
-                    }}
-                  >
-                    Conjunction reports can be generated
-                    from processed screening results.
-                  </p>
-                </div>
-              </div>
+                ASTRA services are operational.
+              </p>
             </div>
           )}
         </div>
 
-        {/* -------------------- SETTINGS -------------------- */}
+        {/* SETTINGS */}
+
         <button
           className="icon-btn"
           aria-label="Settings"
@@ -314,12 +251,13 @@ export default function Header({
           <Icon name="settings" size={17} />
         </button>
 
-        {/* -------------------- PROFILE -------------------- */}
+        {/* PROFILE */}
+
         <div style={{ position: "relative" }}>
           <div
             className="avatar"
             aria-label="User profile"
-            title={`${currentUser.name} (${currentUser.role})`}
+            title={currentUser.role}
             onClick={() => {
               setProfileOpen((value) => !value);
               setNotifOpen(false);
@@ -344,6 +282,8 @@ export default function Header({
                 padding: "14px",
               }}
             >
+              {/* USER INFORMATION */}
+
               <div
                 style={{
                   paddingBottom: "10px",
@@ -373,6 +313,8 @@ export default function Header({
                 </span>
               </div>
 
+              {/* PROFILE ACTIONS */}
+
               <div
                 style={{
                   display: "flex",
@@ -396,6 +338,8 @@ export default function Header({
                   Settings
                 </button>
 
+                {/* LOGOUT */}
+
                 <button
                   className="btn primary"
                   style={{
@@ -414,6 +358,7 @@ export default function Header({
             </div>
           )}
         </div>
+
       </div>
     </header>
   );

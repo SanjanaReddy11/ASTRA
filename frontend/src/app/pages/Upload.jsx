@@ -10,10 +10,7 @@ import { predictFromFile } from "../services/api.js";
 const ACCEPTED_EXTENSIONS = ".csv,.xlsx";
 
 /*
- * These are the internal store statuses.
- *
- * We keep them compatible with the existing store and
- * translate them into the new Astra terminology in the UI.
+ * Internal store statuses.
  */
 const STATUS_STEPS = [
   "Uploaded",
@@ -75,30 +72,19 @@ export default function Upload() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    setEvidenceList(
-      evidenceService.getEvidenceList()
-    );
+    setEvidenceList(evidenceService.getEvidenceList());
   }, []);
 
-  const currentUser =
-    authService.getCurrentUser() || {
-      username: "investigator",
-    };
+  const currentUser = authService.getCurrentUser() || {
+    username: "investigator",
+  };
 
-  const priorityInfo =
-    evidenceService.calculateCasePriority(
-      evidenceList.length
-    );
+  const priorityInfo = evidenceService.calculateCasePriority(
+    evidenceList.length
+  );
 
-  const updateProcessingStatus = (
-    id,
-    internalStatus
-  ) => {
-    const updated =
-      evidenceService.updateStatus(
-        id,
-        internalStatus
-      );
+  const updateProcessingStatus = (id, internalStatus) => {
+    const updated = evidenceService.updateStatus(id, internalStatus);
 
     setEvidenceList(updated);
 
@@ -111,6 +97,12 @@ export default function Upload() {
     setIsUploading(true);
     setLastUploaded(null);
     setVerifyMsg("");
+    setActiveStage(0);
+
+    /*
+     * Clear previous prediction and SHAP explanation.
+     */
+    localStorage.removeItem("astra_latest_cdm_prediction");
 
     try {
       /* -----------------------------------------
@@ -118,17 +110,11 @@ export default function Upload() {
        * ----------------------------------------- */
       setActiveStage(1);
 
-      const hashHex =
-        await calculateSHA256(file);
+      const hashHex = await calculateSHA256(file);
 
-      let formattedSize = `${(
-        file.size / 1024
-      ).toFixed(1)} KB`;
+      let formattedSize = `${(file.size / 1024).toFixed(1)} KB`;
 
-      if (
-        file.size >=
-        1024 * 1024
-      ) {
+      if (file.size >= 1024 * 1024) {
         formattedSize = `${(
           file.size /
           (1024 * 1024)
@@ -140,64 +126,58 @@ export default function Upload() {
         .pop()
         .toUpperCase();
 
-      const newEvidence =
-        evidenceService.addEvidence({
-          name: file.name,
-          size: formattedSize,
-          type: fileExt,
-          uploadedBy:
-            currentUser.username,
-          hash: hashHex,
-        });
+      const newEvidence = evidenceService.addEvidence({
+        name: file.name,
+        size: formattedSize,
+        type: fileExt,
+        uploadedBy: currentUser.username,
+        hash: hashHex,
+      });
 
-      updateProcessingStatus(
-        newEvidence.id,
-        "Uploaded"
-      );
+      updateProcessingStatus(newEvidence.id, "Uploaded");
 
       /* -----------------------------------------
        * STAGE 2 — DATA VALIDATION
        * ----------------------------------------- */
       setActiveStage(2);
 
-      updateProcessingStatus(
-        newEvidence.id,
-        "Under Review"
-      );
+      updateProcessingStatus(newEvidence.id, "Under Review");
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, 300)
-      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       /* -----------------------------------------
        * STAGE 3 — DATA PREPROCESSING
        * ----------------------------------------- */
       setActiveStage(3);
 
-      updateProcessingStatus(
-        newEvidence.id,
-        "Analyzed"
-      );
+      updateProcessingStatus(newEvidence.id, "Analyzed");
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, 300)
-      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       let intelAnalysis;
 
       /* -----------------------------------------
        * REAL CATBOOST MODEL PATH
        * ----------------------------------------- */
-      if (
-        fileExt === "CSV" ||
-        fileExt === "XLSX"
-      ) {
+      if (fileExt === "CSV" || fileExt === "XLSX") {
         try {
-          const result =
-            await predictFromFile(file, {
-              sensorId:
-                currentUser.username,
-            });
+          const result = await predictFromFile(file, {
+            sensorId: currentUser.username,
+          });
+
+          /*
+           * Validate the backend response.
+           */
+          if (
+            !result ||
+            typeof result.prediction !== "string" ||
+            !result.explanation ||
+            !Array.isArray(result.explanation.contributions)
+          ) {
+            throw new Error(
+              "Backend returned an incomplete prediction or SHAP explanation."
+            );
+          }
 
           /* -----------------------------------------
            * STAGE 4 — FUTURE RISK PREDICTED
@@ -209,43 +189,78 @@ export default function Upload() {
             "AI Summary Generated"
           );
 
-          await new Promise((resolve) =>
-            setTimeout(resolve, 300)
-          );
+          await new Promise((resolve) => setTimeout(resolve, 300));
 
           /* -----------------------------------------
            * STAGE 5 — RISK CLASSIFICATION
            * ----------------------------------------- */
           setActiveStage(5);
 
-          const prediction =
-            result.prediction || "Unknown";
+          const prediction = result.prediction || "Unknown";
 
           updateProcessingStatus(
             newEvidence.id,
             "Included In Report"
           );
 
+          /*
+           * SAVE REAL BACKEND PREDICTION + SHAP EXPLANATION.
+           *
+           * SHAPExplainability.jsx reads this localStorage key.
+           */
+          const predictionData = {
+            fileName: file.name,
+
+            uploadedAt: new Date().toISOString(),
+
+            classification: prediction,
+
+            riskScore: result.risk_score,
+
+            log10Probability:
+              result.log10_probability_of_collision,
+
+            probability:
+              result.probability_of_collision,
+
+            isAlert: result.is_alert,
+
+            warning: result.warning || null,
+
+            recordCount: "1 Row (first row analyzed)",
+
+            // IMPORTANT: Save the complete SHAP explanation.
+            explanation: result.explanation,
+          };
+
+          localStorage.setItem(
+            "astra_latest_cdm_prediction",
+            JSON.stringify(predictionData)
+          );
+
+          console.log(
+            "ASTRA prediction saved successfully."
+          );
+
+          console.log(
+            "SHAP contributions:",
+            predictionData.explanation.contributions.length
+          );
+
           intelAnalysis = {
             ...newEvidence,
 
-            recordCount:
-              "1 Row (first row analyzed)",
+            recordCount: "1 Row (first row analyzed)",
 
-            uploadTime:
-              new Date().toLocaleTimeString(),
+            uploadTime: new Date().toLocaleTimeString(),
 
-            validationStatus:
-              "PASS — SHA-256 MATCHED",
+            validationStatus: "PASS — SHA-256 MATCHED",
 
-            predictedRisk:
-              result.risk_score,
+            predictedRisk: result.risk_score,
 
-            classification:
-              `Conjunction Risk: ${prediction}`,
+            classification: `Conjunction Risk: ${prediction}`,
 
-            confidence:
-              `log10(Pc) = ${result.log10_probability_of_collision}`,
+            confidence: `log10(Pc) = ${result.log10_probability_of_collision}`,
 
             summary: `Dataset ${
               file.name
@@ -260,73 +275,83 @@ export default function Upload() {
               "SHA-256 dataset integrity verified.",
 
               `CatBoost classified this conjunction as ${prediction.toUpperCase()} risk (${
-                result.is_alert
-                  ? "ALERT"
-                  : "no alert"
+                result.is_alert ? "ALERT" : "no alert"
               }).`,
 
               result.warning ||
                 "All expected model features were present in the uploaded row.",
+
+              `SHAP explainability generated with ${result.explanation.contributions.length} feature contributions.`,
             ],
 
             isLive: true,
             isError: false,
           };
         } catch (err) {
+          console.error(
+            "CatBoost prediction or SHAP explanation failed:",
+            err
+          );
+
+          /*
+           * Remove previous prediction if current upload fails.
+           */
+          localStorage.removeItem(
+            "astra_latest_cdm_prediction"
+          );
+
           intelAnalysis = {
             ...newEvidence,
 
             recordCount: "Unknown",
 
-            uploadTime:
-              new Date().toLocaleTimeString(),
+            uploadTime: new Date().toLocaleTimeString(),
 
-            validationStatus:
-              "PASS — SHA-256 MATCHED",
+            validationStatus: "PASS — SHA-256 MATCHED",
 
             predictedRisk: null,
 
-            classification:
-              "Live model unavailable",
+            classification: "Live model unavailable",
 
             confidence: "N/A",
 
-            summary: `Could not reach the backend risk model (${err.message}). Showing no prediction — check that the FastAPI server is running at the configured API URL.`,
+            summary: `Could not complete backend prediction or SHAP explanation (${err.message}). Check the FastAPI server and API response.`,
 
             geoIndicators: "N/A",
 
             findings: [
               "SHA-256 dataset integrity verified.",
-              "CatBoost prediction failed — see summary above.",
+              "CatBoost prediction or SHAP explanation failed.",
             ],
 
             isLive: false,
             isError: true,
           };
 
-          updateProcessingStatus(
-            newEvidence.id,
-            "Analyzed"
-          );
+          updateProcessingStatus(newEvidence.id, "Analyzed");
 
           setActiveStage(3);
         }
       } else {
+        /*
+         * Unsupported file type.
+         */
+        localStorage.removeItem(
+          "astra_latest_cdm_prediction"
+        );
+
         intelAnalysis = {
           ...newEvidence,
 
           recordCount: "Not available",
 
-          uploadTime:
-            new Date().toLocaleTimeString(),
+          uploadTime: new Date().toLocaleTimeString(),
 
-          validationStatus:
-            "PASS — SHA-256 MATCHED",
+          validationStatus: "PASS — SHA-256 MATCHED",
 
           predictedRisk: null,
 
-          classification:
-            "Unsupported file type",
+          classification: "Unsupported file type",
 
           confidence: "N/A",
 
@@ -343,21 +368,14 @@ export default function Upload() {
           isError: true,
         };
 
-        updateProcessingStatus(
-          newEvidence.id,
-          "Under Review"
-        );
+        updateProcessingStatus(newEvidence.id, "Under Review");
 
         setActiveStage(2);
       }
 
-      setEvidenceList(
-        evidenceService.getEvidenceList()
-      );
+      setEvidenceList(evidenceService.getEvidenceList());
 
-      setLastUploaded(
-        intelAnalysis
-      );
+      setLastUploaded(intelAnalysis);
 
       setIsUploading(false);
 
@@ -365,22 +383,20 @@ export default function Upload() {
         fileInputRef.current.value = "";
       }
     } catch (err) {
-      console.error(
-        "CDM processing failed:",
-        err
+      console.error("CDM processing failed:", err);
+
+      localStorage.removeItem(
+        "astra_latest_cdm_prediction"
       );
 
       setIsUploading(false);
 
       setLastUploaded({
         name: file.name,
-        size: `${(
-          file.size / 1024
-        ).toFixed(1)} KB`,
+        size: `${(file.size / 1024).toFixed(1)} KB`,
         recordCount: "Unknown",
         predictedRisk: null,
-        classification:
-          "Processing failed",
+        classification: "Processing failed",
         confidence: "N/A",
         summary:
           "The dataset could not be processed. No prediction was generated.",
@@ -402,10 +418,7 @@ export default function Upload() {
   const handleFileChange = (e) => {
     const files = e.target.files;
 
-    if (
-      files &&
-      files.length > 0
-    ) {
+    if (files && files.length > 0) {
       processFile(files[0]);
     }
   };
@@ -415,36 +428,19 @@ export default function Upload() {
 
     setDragOver(false);
 
-    if (
-      e.dataTransfer.files &&
-      e.dataTransfer.files.length > 0
-    ) {
-      processFile(
-        e.dataTransfer.files[0]
-      );
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFile(e.dataTransfer.files[0]);
     }
   };
 
-  const handleStatusChange = (
-    id,
-    newStatus
-  ) => {
-    const updated =
-      evidenceService.updateStatus(
-        id,
-        newStatus
-      );
+  const handleStatusChange = (id, newStatus) => {
+    const updated = evidenceService.updateStatus(id, newStatus);
 
     setEvidenceList(updated);
   };
 
-  const handleVerifyIntegrity = (
-    item
-  ) => {
-    const isValid =
-      evidenceService.verifyIntegrity(
-        item.id
-      );
+  const handleVerifyIntegrity = (item) => {
+    const isValid = evidenceService.verifyIntegrity(item.id);
 
     if (isValid) {
       setVerifyMsg(
@@ -453,14 +449,8 @@ export default function Upload() {
     }
   };
 
-  const getDisplayStatus = (
-    status
-  ) => {
-    return (
-      DISPLAY_STATUS[status] ||
-      status ||
-      "Unknown"
-    );
+  const getDisplayStatus = (status) => {
+    return DISPLAY_STATUS[status] || status || "Unknown";
   };
 
   return (
@@ -494,21 +484,16 @@ export default function Upload() {
             <Icon
               name="upload"
               style={{
-                color:
-                  "var(--accent)",
+                color: "var(--accent)",
               }}
             />
 
-            CDM Dataset Upload &
-            Conjunction Risk Analysis
+            CDM Dataset Upload & Conjunction Risk Analysis
           </h1>
 
           <p>
-            CDM dataset upload,
-            SHA-256 integrity
-            verification & future
-            conjunction-risk
-            prediction.
+            CDM dataset upload, SHA-256 integrity verification & future
+            conjunction-risk prediction.
           </p>
         </div>
 
@@ -517,16 +502,14 @@ export default function Upload() {
           style={{
             display: "flex",
             gap: "10px",
-            alignItems:
-              "center",
+            alignItems: "center",
           }}
         >
           <div className="light-theme-dataset-counter">
             <span
               style={{
                 fontSize: "11px",
-                color:
-                  "var(--text-muted)",
+                color: "var(--text-muted)",
               }}
             >
               Datasets:
@@ -535,26 +518,19 @@ export default function Upload() {
             <span
               className={`chip ${priorityInfo.class}`}
               style={{
-                fontWeight:
-                  "700",
+                fontWeight: "700",
               }}
             >
-              {evidenceList.length}{" "}
-              STORED
+              {evidenceList.length} STORED
             </span>
           </div>
 
           <button
             className="btn primary glow-btn light-theme-primary-action"
-            onClick={() =>
-              fileInputRef.current?.click()
-            }
+            onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
           >
-            <Icon
-              name="upload"
-              size={14}
-            />
+            <Icon name="upload" size={14} />
 
             {isUploading
               ? "Processing Dataset..."
@@ -566,48 +542,32 @@ export default function Upload() {
       <div
         className="grid"
         style={{
-          gridTemplateColumns:
-            "1.3fr 1fr",
+          gridTemplateColumns: "1.3fr 1fr",
         }}
       >
         {/* CDM Dataset Upload */}
         <div className="card hud-card">
           <div className="card-head">
             <h3>
-              <Icon
-                name="target"
-                size={16}
-              />
-
+              <Icon name="target" size={16} />
               CDM Dataset Upload Area
             </h3>
 
-            <span className="chip info">
-              CSV · XLSX
-            </span>
+            <span className="chip info">CSV · XLSX</span>
           </div>
 
           <div
             className={`dropzone-intake ${
-              dragOver
-                ? "drag-active"
-                : ""
-            } ${
-              isUploading
-                ? "scanning-active"
-                : ""
-            }`}
+              dragOver ? "drag-active" : ""
+            } ${isUploading ? "scanning-active" : ""}`}
             onClick={() =>
-              !isUploading &&
-              fileInputRef.current?.click()
+              !isUploading && fileInputRef.current?.click()
             }
             onDragOver={(e) => {
               e.preventDefault();
               setDragOver(true);
             }}
-            onDragLeave={() =>
-              setDragOver(false)
-            }
+            onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
           >
             <div className="intake-icon-wrap">
@@ -623,8 +583,7 @@ export default function Upload() {
             <h3
               style={{
                 fontSize: "16px",
-                marginTop:
-                  "12px",
+                marginTop: "12px",
               }}
             >
               {isUploading
@@ -635,23 +594,18 @@ export default function Upload() {
             <p
               style={{
                 fontSize: "12px",
-                color:
-                  "var(--text-secondary)",
-                marginTop:
-                  "4px",
+                color: "var(--text-secondary)",
+                marginTop: "4px",
               }}
             >
-              Or click to browse local
-              filesystem · Automated
-              SHA-256 signature
-              generation on intake
+              Or click to browse local filesystem · Automated SHA-256
+              signature generation on intake
             </p>
 
             <button
               className="btn primary glow-btn light-theme-primary-action"
               style={{
-                marginTop:
-                  "16px",
+                marginTop: "16px",
               }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -669,113 +623,86 @@ export default function Upload() {
           className="card hud-card"
           style={{
             display: "flex",
-            flexDirection:
-              "column",
-            justifyContent:
-              "space-between",
+            flexDirection: "column",
+            justifyContent: "space-between",
           }}
         >
           <div className="card-head">
             <h3>
-              <Icon
-                name="activity"
-                size={16}
-              />
-
+              <Icon name="activity" size={16} />
               CDM Processing Pipeline
             </h3>
 
-            <span className="chip success">
-              MODEL PIPELINE
-            </span>
+            <span className="chip success">MODEL PIPELINE</span>
           </div>
 
           <div className="processing-stages-list">
-            {PROCESSING_STAGES.map(
-              (stage) => {
-                const isDone =
-                  activeStage >
-                    stage.id ||
-                  (!isUploading &&
-                    activeStage ===
-                      stage.id &&
-                    lastUploaded &&
-                    !lastUploaded.isError);
+            {PROCESSING_STAGES.map((stage) => {
+              const isDone =
+                activeStage > stage.id ||
+                (!isUploading &&
+                  activeStage === stage.id &&
+                  lastUploaded &&
+                  !lastUploaded.isError);
 
-                const isCurrent =
-                  isUploading &&
-                  activeStage ===
-                    stage.id;
+              const isCurrent =
+                isUploading && activeStage === stage.id;
 
-                return (
+              return (
+                <div
+                  key={stage.id}
+                  className={`stage-row ${
+                    isCurrent ? "current" : isDone ? "done" : ""
+                  }`}
+                >
+                  <div className="stage-num">
+                    {isDone ? "✓" : stage.id}
+                  </div>
+
                   <div
-                    key={stage.id}
-                    className={`stage-row ${
-                      isCurrent
-                        ? "current"
-                        : isDone
-                        ? "done"
-                        : ""
-                    }`}
+                    style={{
+                      flex: 1,
+                    }}
                   >
-                    <div className="stage-num">
-                      {isDone
-                        ? "✓"
-                        : stage.id}
+                    <div
+                      style={{
+                        fontSize: "12.5px",
+                        fontWeight: "600",
+                        color: isCurrent
+                          ? "var(--accent)"
+                          : isDone
+                          ? "var(--success)"
+                          : "var(--text)",
+                      }}
+                    >
+                      {stage.name}
                     </div>
 
                     <div
                       style={{
-                        flex: 1,
+                        fontSize: "10.5px",
+                        color: "var(--text-muted)",
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize:
-                            "12.5px",
-                          fontWeight:
-                            "600",
-                          color:
-                            isCurrent
-                              ? "var(--accent)"
-                              : isDone
-                              ? "var(--success)"
-                              : "var(--text)",
-                        }}
-                      >
-                        {stage.name}
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize:
-                            "10.5px",
-                          color:
-                            "var(--text-muted)",
-                        }}
-                      >
-                        {stage.desc}
-                      </div>
+                      {stage.desc}
                     </div>
-
-                    {isCurrent && (
-                      <span className="chip info pulse-chip">
-                        ACTIVE
-                      </span>
-                    )}
                   </div>
-                );
-              }
-            )}
+
+                  {isCurrent && (
+                    <span className="chip info pulse-chip">
+                      ACTIVE
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="light-theme-integrity-panel">
             <small
               style={{
-                fontSize:
-                  "10.5px",
-                color:
-                  "var(--text-muted)",
+                fontSize: "10.5px",
+                color: "var(--text-muted)",
                 display: "block",
               }}
             >
@@ -784,23 +711,17 @@ export default function Upload() {
 
             <div
               style={{
-                display:
-                  "flex",
-                justifyContent:
-                  "space-between",
+                display: "flex",
+                justifyContent: "space-between",
                 fontSize: "11px",
-                marginTop:
-                  "4px",
+                marginTop: "4px",
               }}
             >
-              <span>
-                SHA-256:
-              </span>
+              <span>SHA-256:</span>
 
               <b
                 style={{
-                  color:
-                    "var(--success)",
+                  color: "var(--success)",
                 }}
               >
                 READY
@@ -819,20 +740,16 @@ export default function Upload() {
                 name="file"
                 size={18}
                 style={{
-                  color:
-                    "var(--accent)",
+                  color: "var(--accent)",
                 }}
               />
 
-              Conjunction Risk
-              Analysis Preview
+              Conjunction Risk Analysis Preview
             </h3>
 
             <span
               className={`chip ${
-                lastUploaded.isError
-                  ? "danger"
-                  : "success"
+                lastUploaded.isError ? "danger" : "success"
               }`}
             >
               {lastUploaded.isError
@@ -844,8 +761,7 @@ export default function Upload() {
           <div
             className="grid cols-3"
             style={{
-              marginBottom:
-                "16px",
+              marginBottom: "16px",
             }}
           >
             <div className="mini-analysis-card light-theme-analysis-card">
@@ -853,15 +769,12 @@ export default function Upload() {
                 Predicted Future Risk
               </span>
 
-              {lastUploaded.predictedRisk ===
-              null ? (
+              {lastUploaded.predictedRisk === null ? (
                 <div
                   className="m-val"
                   style={{
-                    color:
-                      "var(--text-muted)",
-                    fontSize:
-                      "14px",
+                    color: "var(--text-muted)",
+                    fontSize: "14px",
                   }}
                 >
                   N/A
@@ -872,31 +785,25 @@ export default function Upload() {
                     className="m-val"
                     style={{
                       color:
-                        lastUploaded.predictedRisk >=
-                        75
+                        lastUploaded.predictedRisk >= 75
                           ? "var(--danger)"
                           : "var(--warning)",
                     }}
                   >
-                    {
-                      lastUploaded.predictedRisk
-                    }
+                    {lastUploaded.predictedRisk}
                   </div>
 
                   <span
                     className={`chip ${
                       lastUploaded.isError
                         ? ""
-                        : lastUploaded.predictedRisk >=
-                          75
+                        : lastUploaded.predictedRisk >= 75
                         ? "danger"
                         : "info"
                     }`}
                     style={{
-                      fontSize:
-                        "9.5px",
-                      marginTop:
-                        "4px",
+                      fontSize: "9.5px",
+                      marginTop: "4px",
                     }}
                   >
                     {lastUploaded.isLive
@@ -915,30 +822,21 @@ export default function Upload() {
               <div
                 className="m-val"
                 style={{
-                  fontSize:
-                    "15px",
-                  color:
-                    "var(--text)",
+                  fontSize: "15px",
+                  color: "var(--text)",
                 }}
               >
-                {
-                  lastUploaded.classification
-                }
+                {lastUploaded.classification}
               </div>
 
               <span
                 className="chip info"
                 style={{
-                  fontSize:
-                    "9.5px",
-                  marginTop:
-                    "4px",
+                  fontSize: "9.5px",
+                  marginTop: "4px",
                 }}
               >
-                CONFIDENCE:{" "}
-                {
-                  lastUploaded.confidence
-                }
+                CONFIDENCE: {lastUploaded.confidence}
               </span>
             </div>
 
@@ -949,24 +847,16 @@ export default function Upload() {
 
               <div
                 style={{
-                  fontSize:
-                    "12px",
-                  color:
-                    "var(--text-secondary)",
-                  marginTop:
-                    "4px",
+                  fontSize: "12px",
+                  color: "var(--text-secondary)",
+                  marginTop: "4px",
                 }}
               >
-                <b>Name:</b>{" "}
-                {lastUploaded.name}
+                <b>Name:</b> {lastUploaded.name}
                 <br />
 
-                <b>Size:</b>{" "}
-                {lastUploaded.size} ·{" "}
-                <b>Records:</b>{" "}
-                {
-                  lastUploaded.recordCount
-                }
+                <b>Size:</b> {lastUploaded.size} · <b>Records:</b>{" "}
+                {lastUploaded.recordCount}
               </div>
             </div>
           </div>
@@ -974,60 +864,39 @@ export default function Upload() {
           <div className="light-theme-findings-panel">
             <b
               style={{
-                fontSize:
-                  "12px",
-                color:
-                  "var(--accent)",
-                display:
-                  "block",
-                marginBottom:
-                  "6px",
+                fontSize: "12px",
+                color: "var(--accent)",
+                display: "block",
+                marginBottom: "6px",
               }}
             >
-              Conjunction Analysis
-              Findings:
+              Conjunction Analysis Findings:
             </b>
 
             <ul
               style={{
                 margin: 0,
-                paddingLeft:
-                  "18px",
-                fontSize:
-                  "12px",
-                color:
-                  "var(--text-secondary)",
-                display:
-                  "flex",
-                flexDirection:
-                  "column",
+                paddingLeft: "18px",
+                fontSize: "12px",
+                color: "var(--text-secondary)",
+                display: "flex",
+                flexDirection: "column",
                 gap: "4px",
               }}
             >
-              {lastUploaded.findings.map(
-                (finding, index) => (
-                  <li
-                    key={index}
-                  >
-                    {finding}
-                  </li>
-                )
-              )}
+              {lastUploaded.findings.map((finding, index) => (
+                <li key={index}>{finding}</li>
+              ))}
             </ul>
 
             <div
               style={{
-                fontSize:
-                  "11px",
-                color:
-                  "var(--text-muted)",
-                marginTop:
-                  "10px",
+                fontSize: "11px",
+                color: "var(--text-muted)",
+                marginTop: "10px",
               }}
             >
-              {
-                lastUploaded.geoIndicators
-              }
+              {lastUploaded.geoIndicators}
             </div>
           </div>
         </div>
@@ -1036,41 +905,26 @@ export default function Upload() {
       {/* REGISTERED CDM DATASETS & INTEGRITY LOG */}
       <div className="card hud-card">
         <div className="card-head">
-          <h3>
-            Registered CDM Datasets &
-            Integrity Log
-          </h3>
+          <h3>Registered CDM Datasets & Integrity Log</h3>
 
           <span className="chip">
-            {evidenceList.length}{" "}
-            DATASETS
+            {evidenceList.length} DATASETS
           </span>
         </div>
 
         {verifyMsg && (
           <div
             style={{
-              padding:
-                "10px 14px",
-              background:
-                "rgba(0, 255, 136, 0.12)",
-              border:
-                "1px solid var(--success)",
-              borderRadius:
-                "6px",
-              color:
-                "var(--success)",
-              fontSize:
-                "12px",
-              marginBottom:
-                "14px",
+              padding: "10px 14px",
+              background: "rgba(0, 255, 136, 0.12)",
+              border: "1px solid var(--success)",
+              borderRadius: "6px",
+              color: "var(--success)",
+              fontSize: "12px",
+              marginBottom: "14px",
             }}
           >
-            <b>
-              Verification
-              Confirmation:
-            </b>{" "}
-            {verifyMsg}
+            <b>Verification Confirmation:</b> {verifyMsg}
           </div>
         )}
 
@@ -1092,170 +946,102 @@ export default function Upload() {
             </thead>
 
             <tbody>
-              {evidenceList.map(
-                (dataset) => (
-                  <tr
-                    key={
-                      dataset.id
-                    }
+              {evidenceList.map((dataset) => (
+                <tr key={dataset.id}>
+                  <td
+                    className="mono"
+                    style={{
+                      fontWeight: 700,
+                      color: "var(--accent)",
+                    }}
                   >
-                    <td
-                      className="mono"
+                    {dataset.id}
+                  </td>
+
+                  <td>
+                    <b>{dataset.name}</b>
+                  </td>
+
+                  <td className="mono">{dataset.size}</td>
+
+                  <td>
+                    <span className="chip info">
+                      {dataset.type}
+                    </span>
+                  </td>
+
+                  <td
+                    className="mono"
+                    style={{
+                      fontSize: "11px",
+                    }}
+                  >
+                    {dataset.uploadDate}
+                  </td>
+
+                  <td>
+                    <b>{dataset.uploadedBy}</b>
+                  </td>
+
+                  <td
+                    className="mono"
+                    style={{
+                      fontSize: "10px",
+                      maxWidth: "110px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={dataset.hash}
+                  >
+                    {dataset.hash.substring(0, 14)}...
+                  </td>
+
+                  <td>
+                    <select
+                      value={dataset.status}
+                      onChange={(event) =>
+                        handleStatusChange(
+                          dataset.id,
+                          event.target.value
+                        )
+                      }
+                      className="light-theme-select"
+                    >
+                      {STATUS_STEPS.map((status) => (
+                        <option key={status} value={status}>
+                          {DISPLAY_STATUS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+
+                  <td>
+                    <span
+                      className="chip success"
                       style={{
-                        fontWeight:
-                          700,
-                        color:
-                          "var(--accent)",
+                        fontSize: "10px",
                       }}
                     >
-                      {
-                        dataset.id
-                      }
-                    </td>
+                      {dataset.integrity}
+                    </span>
+                  </td>
 
-                    <td>
-                      <b>
-                        {
-                          dataset.name
-                        }
-                      </b>
-                    </td>
-
-                    <td className="mono">
-                      {
-                        dataset.size
-                      }
-                    </td>
-
-                    <td>
-                      <span className="chip info">
-                        {
-                          dataset.type
-                        }
-                      </span>
-                    </td>
-
-                    <td
-                      className="mono"
+                  <td>
+                    <button
+                      className="btn ghost light-theme-action"
                       style={{
-                        fontSize:
-                          "11px",
+                        padding: "4px 8px",
+                        fontSize: "11px",
                       }}
-                    >
-                      {
-                        dataset.uploadDate
-                      }
-                    </td>
-
-                    <td>
-                      <b>
-                        {
-                          dataset.uploadedBy
-                        }
-                      </b>
-                    </td>
-
-                    <td
-                      className="mono"
-                      style={{
-                        fontSize:
-                          "10px",
-                        maxWidth:
-                          "110px",
-                        overflow:
-                          "hidden",
-                        textOverflow:
-                          "ellipsis",
-                      }}
-                      title={
-                        dataset.hash
+                      onClick={() =>
+                        handleVerifyIntegrity(dataset)
                       }
                     >
-                      {
-                        dataset.hash
-                          .substring(
-                            0,
-                            14
-                          )
-                      }
-                      ...
-                    </td>
-
-                    <td>
-                      <select
-                        value={
-                          dataset.status
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          handleStatusChange(
-                            dataset.id,
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        className="light-theme-select"
-                      >
-                        {STATUS_STEPS.map(
-                          (
-                            status
-                          ) => (
-                            <option
-                              key={
-                                status
-                              }
-                              value={
-                                status
-                              }
-                            >
-                              {
-                                DISPLAY_STATUS[
-                                  status
-                                ]
-                              }
-                            </option>
-                          )
-                        )}
-                      </select>
-                    </td>
-
-                    <td>
-                      <span
-                        className="chip success"
-                        style={{
-                          fontSize:
-                            "10px",
-                        }}
-                      >
-                        {
-                          dataset.integrity
-                        }
-                      </span>
-                    </td>
-
-                    <td>
-                      <button
-                        className="btn ghost light-theme-action"
-                        style={{
-                          padding:
-                            "4px 8px",
-                          fontSize:
-                            "11px",
-                        }}
-                        onClick={() =>
-                          handleVerifyIntegrity(
-                            dataset
-                          )
-                        }
-                      >
-                        Verify SHA-256
-                      </button>
-                    </td>
-                  </tr>
-                )
-              )}
+                      Verify SHA-256
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
